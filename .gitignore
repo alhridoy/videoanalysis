@@ -1,0 +1,102 @@
+# Dependencies
+node_modules/
+backend/venv/
+backend/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.Python
+
+# Build outputs
+dist/
+build/
+dist-ssr/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+*.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+videochat.db
+backend/videochat.db
+
+# Vector database
+backend/chroma_db/
+chroma_db/
+
+# Upload directories (keep structure but not files)
+uploads/*.mp4
+uploads/*.avi
+uploads/*.mov
+uploads/*.mkv
+uploads/*.webm
+uploads/frames/*
+uploads/thumbnails/*
+uploads/youtube/*
+backend/uploads/*.mp4
+backend/uploads/*.avi
+backend/uploads/*.mov
+backend/uploads/*.mkv
+backend/uploads/*.webm
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Package manager files
+package-lock.json
+yarn.lock
+bun.lockb
+
+# Test files
+test_*.py
+test_*.js
+test_*.ts
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Python virtual environment
+venv/
+env/
+ENV/
+
+# Cache directories
+.cache/
+.parcel-cache/
+.npm/
+.eslintcache
