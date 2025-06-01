@@ -28,6 +28,7 @@ class Video(Base):
     # Analysis results
     frame_count = Column(Integer, default=0)
     embedding_status = Column(String(50), default="pending")  # pending, processing, completed, failed
+    analysis_metadata = Column(JSON, nullable=True)  # Additional metadata for storing analysis results
 
 class VideoFrame(Base):
     """Video frame model for storing extracted frames and embeddings"""

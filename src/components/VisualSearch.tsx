@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Search, Eye, Clock, Zap, Film, ChevronDown, ChevronUp, Users, Target } from 'lucide-react';
-import { SearchResult, ClipResult } from '@/services/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, Eye, Clock, Zap, Film, ChevronDown, ChevronUp, Users, Target, Play, ChevronLeft, ChevronRight, Grid3X3, BarChart3 } from 'lucide-react';
+import { SearchResult, ClipResult, apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface VisualSearchProps {
@@ -15,312 +15,195 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchClips, setSearchClips] = useState<ClipResult[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [viewMode, setViewMode] = useState<'clips' | 'frames'>('clips');
+  const [viewMode, setViewMode] = useState<'clips' | 'frames' | 'timeline'>('clips');
   const [directAnswer, setDirectAnswer] = useState<string>('');
   const [queryType, setQueryType] = useState<string>('');
   const [expandedResults, setExpandedResults] = useState<Set<number>>(new Set());
+  const [currentClipIndex, setCurrentClipIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const { toast } = useToast();
 
+  // Add keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!hasSearched || searchClips.length === 0) return;
+      
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          navigateToClip(Math.max(0, currentClipIndex - 1));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          navigateToClip(Math.min(searchClips.length - 1, currentClipIndex + 1));
+          break;
+        case ' ':
+          e.preventDefault();
+          if (searchClips[currentClipIndex]) {
+            onTimeJump(searchClips[currentClipIndex].start_time);
+            setIsPlaying(!isPlaying);
+          }
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (searchClips[currentClipIndex]) {
+            onTimeJump(searchClips[currentClipIndex].start_time);
+          }
+          break;
+      }
+    };
 
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentClipIndex, searchClips, hasSearched, isPlaying, onTimeJump]);
+
+  const navigateToClip = useCallback((index: number) => {
+    if (index >= 0 && index < searchClips.length) {
+      setCurrentClipIndex(index);
+      onTimeJump(searchClips[index].start_time);
+    }
+  }, [searchClips, onTimeJump]);
+
+  const formatDuration = (seconds: number): string => {
+    return `${Math.round(seconds * 10) / 10}s`;
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim()) {
+      // Clear results if search is empty
+      setSearchResults([]);
+      setSearchClips([]);
+      setDirectAnswer('');
+      setQueryType('');
+      setHasSearched(false);
+      setCurrentClipIndex(0);
+      return;
+    }
 
     setIsSearching(true);
     setHasSearched(true);
     setExpandedResults(new Set()); // Reset expanded results
 
-    // TEMPORARY: Force use of enhanced mock data to demonstrate proper UX
-    // This bypasses the backend API which still returns old format
     try {
-      // Always use enhanced mock results for now to show proper UX
-      const mockResponse = generateEnhancedMockResults(searchQuery);
-      setSearchResults(mockResponse.results);
-      setSearchClips(mockResponse.clips);
-      setDirectAnswer(mockResponse.direct_answer || '');
-      setQueryType(mockResponse.query_type || '');
-
-      if (mockResponse.results.length === 0) {
-        toast({
-          title: "No results found",
-          description: `No visual content matching "${searchQuery}" was found in this video.`,
+      // Log the search attempt for debugging
+      console.log(`🔍 Starting visual search for: "${searchQuery}" on video ID: ${videoId}`);
+      
+      // Use real API call to search video content with the native search enabled
+      const response = await apiService.visualSearch(videoId, searchQuery.trim(), 10);
+      
+      console.log('📊 Visual search response:', response);
+      
+      // Add detailed debugging for "people" searches
+      if (searchQuery.toLowerCase().includes('people') || searchQuery.toLowerCase().includes('person')) {
+        console.log('👥 People search debug:', {
+          query: searchQuery,
+          videoId,
+          processingMethod: response.processing_method,
+          totalResults: response.total_results,
+          hasClips: !!response.clips && response.clips.length > 0,
+          hasResults: !!response.results && response.results.length > 0,
+          clipsData: response.clips?.slice(0, 2), // First 2 clips for inspection
+          resultsData: response.results?.slice(0, 2) // First 2 results for inspection
         });
       }
-    } catch (error) {
-      toast({
-        title: "Search failed",
-        description: error instanceof Error ? error.message : "Failed to search video content",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSearching(false);
-    }
 
-    /*
-    // ORIGINAL CODE - Uncomment when backend is updated to return enhanced format
-    try {
-      const response = await apiService.visualSearch(videoId, searchQuery);
+      setSearchResults(response.results || []);
+      setSearchClips(response.clips || []);
+      setDirectAnswer(response.direct_answer || '');
+      setQueryType(response.query_type || '');
+      setCurrentClipIndex(0); // Reset to first clip
 
-      // Check if backend returns enhanced format
-      if (response.direct_answer || response.query_type) {
-        // Backend supports enhanced format
-        setSearchResults(response.results);
-        setSearchClips(response.clips || []);
-        setDirectAnswer(response.direct_answer || '');
-        setQueryType(response.query_type || '');
-      } else {
-        // Backend still returns old format, use enhanced mock
-        const mockResponse = generateEnhancedMockResults(searchQuery);
-        setSearchResults(mockResponse.results);
-        setSearchClips(mockResponse.clips);
-        setDirectAnswer(mockResponse.direct_answer || '');
-        setQueryType(mockResponse.query_type || '');
-      }
+      const hasResults = (response.results || []).length > 0 || (response.clips || []).length > 0;
 
-      if (response.results.length === 0) {
-        toast({
-          title: "No results found",
-          description: `No visual content matching "${searchQuery}" was found in this video.`,
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Search failed",
-        description: error instanceof Error ? error.message : "Failed to search video content",
-        variant: "destructive",
-      });
-
-      // Fallback to enhanced mock results for demo
-      const mockResponse = generateEnhancedMockResults(searchQuery);
-      setSearchResults(mockResponse.results);
-      setSearchClips(mockResponse.clips);
-      setDirectAnswer(mockResponse.direct_answer || '');
-      setQueryType(mockResponse.query_type || '');
-    } finally {
-      setIsSearching(false);
-    }
-    */
-  };
-
-  const generateEnhancedMockResults = (query: string): {
-    results: SearchResult[];
-    clips: ClipResult[];
-    direct_answer?: string;
-    query_type?: string;
-  } => {
-    const lowerQuery = query.toLowerCase();
-    console.log('🔍 Enhanced search for:', query, '| Lower:', lowerQuery);
-
-    // Counting queries - Enhanced to catch your specific query
-    if (lowerQuery.includes('how many') || lowerQuery.includes('count') || lowerQuery.includes('number of') ||
-        lowerQuery.includes('people is here') || lowerQuery.includes('people are here') ||
-        lowerQuery.includes('many people') || lowerQuery.includes('people here')) {
-      if (lowerQuery.includes('people') || lowerQuery.includes('person') || lowerQuery.includes('speaker') || lowerQuery.includes('here')) {
-        console.log('✅ Triggered counting query for people!');
-        return {
-          results: [
-            {
-              timestamp: 15,
-              confidence: 95,
-              description: 'One adult male speaker introducing himself at video start',
-              summary: '1 person detected - adult male speaker',
-              people_count: 1,
-              objects_detected: ['microphone', 'chair', 'person'],
-              detailed_analysis: 'Professional studio setup with one male speaker, approximately 30-50 years old, wearing black shirt, positioned in front of microphone for recording.',
-              frame_path: '/api/placeholder/120/68'
-            },
-            {
-              timestamp: 45,
-              confidence: 92,
-              description: 'Same speaker explaining his background and experience',
-              summary: '1 person detected - same male speaker',
-              people_count: 1,
-              objects_detected: ['microphone', 'chair', 'person'],
-              detailed_analysis: 'Continuation of recording session with the same individual speaker discussing his professional background.',
-              frame_path: '/api/placeholder/120/68'
-            },
-            {
-              timestamp: 120,
-              confidence: 94,
-              description: 'Speaker demonstrating project features and concepts',
-              summary: '1 person detected - presenter mode',
-              people_count: 1,
-              objects_detected: ['microphone', 'person', 'studio setup'],
-              detailed_analysis: 'The speaker is actively presenting and explaining technical concepts, maintaining consistent positioning in the professional recording environment.',
-              frame_path: '/api/placeholder/120/68'
-            },
-            {
-              timestamp: 180,
-              confidence: 91,
-              description: 'Speaker continuing technical discussion',
-              summary: '1 person detected - technical explanation',
-              people_count: 1,
-              objects_detected: ['microphone', 'person', 'boom arm'],
-              detailed_analysis: 'The same individual continues the presentation, discussing technical implementation details with clear visibility throughout.',
-              frame_path: '/api/placeholder/120/68'
-            },
-            {
-              timestamp: 240,
-              confidence: 89,
-              description: 'Speaker in final segments of presentation',
-              summary: '1 person detected - conclusion',
-              people_count: 1,
-              objects_detected: ['microphone', 'person'],
-              detailed_analysis: 'The speaker concludes the presentation, maintaining the same professional setup and positioning throughout the entire video.',
-              frame_path: '/api/placeholder/120/68'
-            }
-          ],
-          clips: [],
-          direct_answer: '1 person detected consistently throughout the video (5 instances)',
-          query_type: 'counting'
-        };
-      }
-
-      if (lowerQuery.includes('object') || lowerQuery.includes('item')) {
-        return {
-          results: [
-            {
-              timestamp: 30,
-              confidence: 88,
-              description: 'Multiple objects visible in frame',
-              summary: '3-4 main objects detected',
-              objects_detected: ['microphone', 'chair', 'boom arm', 'clothing'],
-              detailed_analysis: 'Professional recording setup with microphone, boom arm, upholstered chair, and speaker clothing visible.',
-              frame_path: '/api/placeholder/120/68'
-            }
-          ],
-          clips: [],
-          direct_answer: '3-4 main objects detected (microphone, chair, boom arm, clothing)',
-          query_type: 'counting'
-        };
-      }
-    }
-
-    // Object detection queries
-    if (lowerQuery.includes('microphone') || lowerQuery.includes('mic')) {
-      console.log('✅ Triggered microphone detection query!');
-      return {
-        results: [
-          {
-            timestamp: 10,
-            confidence: 98,
-            description: 'Professional broadcast microphone visible at video start',
-            summary: 'Shure SM7B microphone detected',
-            objects_detected: ['microphone', 'boom arm', 'shock mount'],
-            detailed_analysis: 'High-quality Shure SM7B dynamic microphone with shock mount, positioned on articulated boom arm for professional recording. Clear view of SHURE branding and SM7B model number.',
-            frame_path: '/api/placeholder/120/68'
-          },
-          {
-            timestamp: 45,
-            confidence: 96,
-            description: 'Microphone remains prominently visible during speaker introduction',
-            summary: 'Shure SM7B microphone - clear view',
-            objects_detected: ['microphone', 'boom arm', 'shock mount', 'cables'],
-            detailed_analysis: 'Continued clear view of the professional microphone setup. The boom arm positioning and shock mount are clearly visible, indicating professional podcast/recording environment.',
-            frame_path: '/api/placeholder/120/68'
-          },
-          {
-            timestamp: 90,
-            confidence: 94,
-            description: 'Microphone visible as speaker discusses background',
-            summary: 'Shure SM7B microphone - side angle',
-            objects_detected: ['microphone', 'boom arm', 'branding'],
-            detailed_analysis: 'Side angle view of the microphone showing the distinctive Shure SM7B design. The boom arm articulation and professional mounting system are clearly visible.',
-            frame_path: '/api/placeholder/120/68'
-          },
-          {
-            timestamp: 150,
-            confidence: 92,
-            description: 'Microphone setup visible during project explanation',
-            summary: 'Shure SM7B microphone - recording setup',
-            objects_detected: ['microphone', 'boom arm', 'shock mount'],
-            detailed_analysis: 'Professional recording setup with microphone positioned optimally for voice capture. The shock mount system is clearly visible, designed to reduce vibrations and handling noise.',
-            frame_path: '/api/placeholder/120/68'
-          },
-          {
-            timestamp: 210,
-            confidence: 90,
-            description: 'Microphone remains in frame during technical discussion',
-            summary: 'Shure SM7B microphone - consistent presence',
-            objects_detected: ['microphone', 'boom arm', 'studio setup'],
-            detailed_analysis: 'The microphone maintains consistent positioning throughout the recording, indicating a well-planned studio setup. Professional broadcast-quality equipment clearly visible.',
-            frame_path: '/api/placeholder/120/68'
-          },
-          {
-            timestamp: 280,
-            confidence: 88,
-            description: 'Microphone visible in final segments of presentation',
-            summary: 'Shure SM7B microphone - end segment',
-            objects_detected: ['microphone', 'boom arm'],
-            detailed_analysis: 'Final clear view of the microphone setup as the presentation concludes. The professional audio equipment remains consistently positioned throughout the entire recording.',
-            frame_path: '/api/placeholder/120/68'
-          }
-        ],
-        clips: [],
-        direct_answer: 'Professional Shure SM7B microphone detected throughout video (6 instances)',
-        query_type: 'object_detection'
-      };
-    }
-
-    // Clothing/appearance queries
-    if (lowerQuery.includes('wearing') || lowerQuery.includes('shirt') || lowerQuery.includes('clothes')) {
-      return {
-        results: [
-          {
-            timestamp: 20,
-            confidence: 94,
-            description: 'Speaker wearing black henley shirt',
-            summary: 'Black henley-style shirt with buttons',
-            objects_detected: ['black shirt', 'buttons', 'chain necklace'],
-            detailed_analysis: 'Speaker is wearing a black henley-style shirt with visible collar and buttons near neckline, plus a thin metallic chain.',
-            frame_path: '/api/placeholder/120/68'
-          }
-        ],
-        clips: [],
-        direct_answer: 'Black henley-style shirt with buttons and thin chain necklace',
-        query_type: 'object_detection'
-      };
-    }
-
-    // Background/scene queries
-    if (lowerQuery.includes('background') || lowerQuery.includes('color') || lowerQuery.includes('scene')) {
-      return {
-        results: [
-          {
-            timestamp: 25,
-            confidence: 91,
-            description: 'Professional studio setup with solid background',
-            summary: 'Dark green/teal solid background',
-            objects_detected: ['background', 'studio lighting'],
-            detailed_analysis: 'Professional recording environment with uniform dark forest green or deep teal background, designed to minimize distractions.',
-            frame_path: '/api/placeholder/120/68'
-          }
-        ],
-        clips: [],
-        direct_answer: 'Dark green/teal solid background in professional studio setting',
-        query_type: 'scene_analysis'
-      };
-    }
-
-    // Default enhanced results
-    return {
-      results: [
-        {
-          timestamp: 60,
-          confidence: 75,
-          description: `Content related to "${query}" found in video`,
-          summary: `Match found for "${query}"`,
-          detailed_analysis: `Detailed analysis available for content matching "${query}" in the video frame.`,
-          frame_path: '/api/placeholder/120/68'
+      if (!hasResults) {
+        // Provide more specific guidance based on processing method
+        let processingMessage = "No visual content matching your query was found.";
+        
+        if (response.processing_method === "direct_frame_analysis") {
+          processingMessage = `Direct frame analysis completed but found no matches for "${searchQuery}". Try more general terms or check if the content exists in your video.`;
+        } else if (response.processing_method === "native_video_search") {
+          processingMessage = "Native video search found no matches. The video may need more processing time or the content might not be visually detectable.";
+        } else if (response.processing_method === "semantic_search") {
+          processingMessage = "Semantic search found no matches. Try uploading the video again or use different keywords.";
+        } else {
+          processingMessage = "No matches found. Try keywords like 'person', 'microphone', 'red car', 'text', or 'background'.";
         }
-      ],
-      clips: [],
-      direct_answer: `Found content matching "${query}"`,
-      query_type: 'general'
-    };
+        
+        toast({
+          title: "No results found", 
+          description: processingMessage,
+        });
+        
+        console.log('❌ No results found. Response details:', {
+          totalResults: response.total_results,
+          processingMethod: response.processing_method,
+          clips: response.clips?.length || 0,
+          results: response.results?.length || 0
+        });
+      } else {
+        const totalResults = (response.clips || []).length + (response.results || []).length;
+        const method = response.processing_method ? ` using ${response.processing_method}` : '';
+        
+        toast({
+          title: "Search completed",
+          description: `Found ${totalResults} ${totalResults === 1 ? 'result' : 'results'} for "${searchQuery}"${method}`,
+        });
+        
+        console.log('✅ Search successful:', {
+          query: searchQuery,
+          totalResults,
+          processingMethod: response.processing_method,
+          clipsFound: response.clips?.length || 0,
+          framesFound: response.results?.length || 0,
+          directAnswer: response.direct_answer,
+          queryType: response.query_type
+        });
+      }
+    } catch (error) {
+      console.error('❌ Visual search error:', error);
+      
+      // More detailed error handling
+      let errorMessage = "Failed to search video content";
+      if (error instanceof Error) {
+        if (error.message.includes('404')) {
+          errorMessage = "Video not found. Please make sure the video is uploaded and processed.";
+        } else if (error.message.includes('500')) {
+          errorMessage = "Server error during search. The video might need to be processed first.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      toast({
+        title: "Search failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      
+      // Clear results on error
+      setSearchResults([]);
+      setSearchClips([]);
+      setDirectAnswer('');
+      setQueryType('');
+    } finally {
+      setIsSearching(false);
+    }
   };
+
+  // Add real-time search as user types (but only on manual submit, not auto-search)
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      // Clear results if query is empty
+      setSearchResults([]);
+      setSearchClips([]);
+      setDirectAnswer('');
+      setQueryType('');
+      setHasSearched(false);
+      setCurrentClipIndex(0);
+    }
+  }, [searchQuery]);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -361,12 +244,67 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Describe what you're looking for... (e.g., 'red car', 'person speaking', 'computer screen')"
-            className="w-full px-4 py-3 pl-12 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+            placeholder="Search for anything... (e.g., 'red car', 'tree', 'people', 'microphone')"
+            className="w-full px-4 py-3 pl-12 pr-12 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all"
             disabled={isSearching}
           />
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setSearchResults([]);
+                setSearchClips([]);
+                setDirectAnswer('');
+                setQueryType('');
+                setHasSearched(false);
+                setCurrentClipIndex(0);
+              }}
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground hover:text-foreground transition-colors"
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
         </div>
+
+        {/* Search Suggestions & Help */}
+        {!hasSearched && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {['red car', 'person', 'microphone', 'text on screen', 'background', 'people'].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setSearchQuery(suggestion)}
+                  className="px-3 py-1.5 text-xs bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground rounded-full transition-all border border-border hover:border-primary/50"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+            
+            <div className="bg-muted/30 rounded-lg p-3 text-xs text-muted-foreground">
+              <div className="font-medium mb-2">💡 How Visual Search Works:</div>
+              <div className="space-y-2">
+                <div>• <strong>Native Video Search:</strong> Uses Gemini 2.5 to directly analyze video content</div>
+                <div>• <strong>Object Detection:</strong> "car", "microphone", "phone", "person"</div>
+                <div>• <strong>Color + Object:</strong> "red car", "blue shirt", "green background"</div>
+                <div>• <strong>Scene Analysis:</strong> "background", "outdoor scene", "indoor setting"</div>
+                <div>• <strong>Text Detection:</strong> "sign", "text on screen", "writing"</div>
+                <div>• <strong>Counting:</strong> "how many people", "count cars"</div>
+              </div>
+              
+              <div className="mt-3 pt-2 border-t border-border text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span>Powered by Gemini 2.5 Video Understanding</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <button
           type="submit"
@@ -393,32 +331,32 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
           {isSearching ? (
             <div className="text-center py-8">
               <div className="animate-pulse space-y-4">
-                <div className="w-16 h-16 bg-gray-800 rounded-full mx-auto flex items-center justify-center">
-                  <Zap className="w-8 h-8 text-white" />
+                <div className="w-16 h-16 bg-muted rounded-full mx-auto flex items-center justify-center">
+                  <Zap className="w-8 h-8 text-muted-foreground" />
                 </div>
-                <p className="text-gray-300">
+                <p className="text-muted-foreground">
                   AI is analyzing video frames for "{searchQuery}"
                 </p>
               </div>
             </div>
-          ) : searchResults.length > 0 ? (
+          ) : searchResults.length > 0 || searchClips.length > 0 ? (
             <>
               {/* Direct Answer Section */}
               {directAnswer && (
-                <div className="mb-4 p-4 bg-gray-900/80 rounded-lg border border-gray-700">
+                <div className="mb-4 p-4 bg-muted/50 rounded-lg border border-border">
                   <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
                       {queryType === 'counting' ? (
-                        <Users className="w-4 h-4 text-black" />
+                        <Users className="w-4 h-4 text-primary-foreground" />
                       ) : (
-                        <Target className="w-4 h-4 text-black" />
+                        <Target className="w-4 h-4 text-primary-foreground" />
                       )}
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-white font-medium mb-1">Direct Answer</h4>
-                      <p className="text-gray-300 text-sm leading-relaxed">{directAnswer}</p>
+                      <h4 className="text-foreground font-medium mb-1">Direct Answer</h4>
+                      <p className="text-muted-foreground text-sm leading-relaxed">{directAnswer}</p>
                       {queryType && (
-                        <span className="inline-block mt-2 px-2 py-1 bg-gray-800 rounded text-xs text-gray-400 border border-gray-600">
+                        <span className="inline-block mt-2 px-2 py-1 bg-muted rounded text-xs text-muted-foreground border border-border">
                           {queryType.replace('_', ' ')}
                         </span>
                       )}
@@ -430,110 +368,300 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
               {/* Results Header with View Toggle */}
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h4 className="text-white font-medium">
-                    Found {searchResults.length} {searchResults.length === 1 ? 'match' : 'matches'} for "{searchQuery}"
+                  <h4 className="text-foreground font-medium">
+                    Found {searchClips.length > 0 ? `${searchClips.length} clips` : `${searchResults.length} matches`} for "{searchQuery}"
                   </h4>
-                  <p className="text-sm text-gray-400 mt-1">
-                    {searchResults.length > 1 ? 'Multiple instances detected throughout the video. ' : ''}Click any result to jump to that moment in the video
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {searchClips.length > 0 
+                      ? `${searchClips.length} video segments with ${searchResults.length} total frames detected`
+                      : searchResults.length > 1 
+                        ? 'Multiple instances detected throughout the video. Click any result to jump to that moment' 
+                        : 'Click result to jump to that moment in the video'
+                    }
                   </p>
                 </div>
-                {searchClips.length > 0 && (
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  {searchClips.length > 0 && (
                     <button
                       onClick={() => setViewMode('clips')}
-                      className={`px-3 py-1 rounded text-sm font-medium transition-all ${
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${
                         viewMode === 'clips'
-                          ? 'bg-white text-black'
-                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                       }`}
                     >
                       <Film className="w-4 h-4 inline mr-1" />
                       Clips ({searchClips.length})
                     </button>
+                  )}
+                  {searchClips.length > 0 && (
                     <button
-                      onClick={() => setViewMode('frames')}
-                      className={`px-3 py-1 rounded text-sm font-medium transition-all ${
-                        viewMode === 'frames'
-                          ? 'bg-white text-black'
-                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                      onClick={() => setViewMode('timeline')}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${
+                        viewMode === 'timeline'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                       }`}
                     >
-                      <Eye className="w-4 h-4 inline mr-1" />
-                      Frames ({searchResults.length})
+                      <BarChart3 className="w-4 h-4 inline mr-1" />
+                      Timeline
                     </button>
-                  </div>
-                )}
+                  )}
+                  <button
+                    onClick={() => setViewMode('frames')}
+                    className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${
+                      viewMode === 'frames'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                  >
+                    <Grid3X3 className="w-4 h-4 inline mr-1" />
+                    Frames ({searchResults.length})
+                  </button>
+                </div>
               </div>
 
               {/* Clips View */}
               {viewMode === 'clips' && searchClips.length > 0 && (
-                <div className="max-h-96 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-gray-500/50 scrollbar-track-transparent">
-                  {searchClips.map((clip, index) => (
-                    <div
-                      key={index}
-                      className="bg-card rounded-lg border border-border p-4 hover:bg-muted/50 transition-all duration-300"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1 pr-4">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs text-muted-foreground font-medium">#{index + 1}</span>
-                            <h5 className="text-foreground font-medium">
-                              {formatTime(clip.start_time)} - {formatTime(clip.end_time)}
-                            </h5>
-                            <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                              {Math.round((clip.end_time - clip.start_time) * 10) / 10}s
-                            </span>
-                          </div>
-                          <p className="text-sm text-muted-foreground leading-relaxed">
-                            {clip.description}
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className={`text-sm font-medium px-2 py-1 rounded ${getConfidenceColor(clip.confidence)} bg-muted`}>
-                            {clip.confidence}%
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {clip.frame_count} frames
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Clip Actions */}
-                      <div className="flex gap-2">
+                <div className="space-y-4">
+                  {/* Clip Navigation */}
+                  <div className="flex items-center justify-between bg-muted/30 rounded-lg p-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground">
+                        Clip {currentClipIndex + 1} of {searchClips.length}
+                      </span>
+                      <div className="flex items-center gap-1">
                         <button
-                          onClick={() => onTimeJump(clip.start_time)}
-                          className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1"
+                          onClick={() => navigateToClip(currentClipIndex - 1)}
+                          disabled={currentClipIndex === 0}
+                          className="p-1 rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Previous clip (←)"
                         >
-                          <Eye className="w-4 h-4" />
-                          Play from start
+                          <ChevronLeft className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => setViewMode('frames')}
-                          className="bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-1"
+                          onClick={() => navigateToClip(currentClipIndex + 1)}
+                          disabled={currentClipIndex === searchClips.length - 1}
+                          className="p-1 rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Next clip (→)"
                         >
-                          <Film className="w-4 h-4" />
-                          View frames
+                          <ChevronRight className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
-                  ))}
+                    <div className="text-xs text-muted-foreground">
+                      Use ← → keys to navigate • Space to play/pause • Enter to jump
+                    </div>
+                  </div>
+
+                  {/* Clips Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-500/50 scrollbar-track-transparent">
+                    {searchClips.map((clip, index) => (
+                      <div
+                        key={index}
+                        className={`group bg-card rounded-lg border transition-all duration-300 cursor-pointer ${
+                          index === currentClipIndex
+                            ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                            : 'border-border hover:border-primary/50 hover:bg-muted/30'
+                        }`}
+                        onClick={() => {
+                          setCurrentClipIndex(index);
+                          onTimeJump(clip.start_time);
+                        }}
+                      >
+                        {/* Clip Thumbnail */}
+                        <div className="relative aspect-video bg-muted/50 rounded-t-lg overflow-hidden">
+                          {/* Thumbnail Image */}
+                          <img 
+                            src={`https://picsum.photos/400/225?random=${index + Math.random()}`}
+                            alt={`Clip ${index + 1} thumbnail`}
+                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              target.style.display = 'none';
+                            }}
+                          />
+                          
+                          {/* Play button overlay */}
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="bg-primary/90 rounded-full p-3 shadow-lg">
+                              <Play className="w-6 h-6 text-primary-foreground" />
+                            </div>
+                          </div>
+                          
+                          {/* Clip Info Overlay */}
+                          <div className="absolute top-2 left-2 flex gap-1">
+                            <span className="bg-black/80 text-white text-xs px-2 py-1 rounded font-medium">
+                              #{index + 1}
+                            </span>
+                            <span className="bg-primary/90 text-primary-foreground text-xs px-2 py-1 rounded font-medium">
+                              {formatDuration(clip.end_time - clip.start_time)}
+                            </span>
+                          </div>
+                          
+                          {/* Confidence Badge */}
+                          <div className="absolute top-2 right-2">
+                            <span className={`text-xs px-2 py-1 rounded font-medium ${
+                              clip.confidence >= 90 
+                                ? 'bg-green-500/90 text-white' 
+                                : clip.confidence >= 75 
+                                  ? 'bg-yellow-500/90 text-white'
+                                  : 'bg-orange-500/90 text-white'
+                            }`}>
+                              {clip.confidence}%
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Clip Details */}
+                        <div className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="w-3 h-3" />
+                              <span>{formatTime(clip.start_time)} - {formatTime(clip.end_time)}</span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {clip.frame_count} frames
+                            </span>
+                          </div>
+                          
+                          <p className="text-sm text-foreground leading-relaxed overflow-hidden" style={{
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 2
+                          }}>
+                            {clip.description}
+                          </p>
+                          
+                          {/* Clip Actions */}
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onTimeJump(clip.start_time);
+                              }}
+                              className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-2 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                            >
+                              <Play className="w-3 h-3" />
+                              Jump to clip
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline View */}
+              {viewMode === 'timeline' && searchClips.length > 0 && (
+                <div className="space-y-4">
+                  <div className="bg-muted/30 rounded-lg p-4">
+                    <h5 className="text-sm font-medium text-foreground mb-3">Clip Timeline</h5>
+                    <div className="relative">
+                      {/* Timeline bar */}
+                      <div className="h-2 bg-muted rounded-full relative overflow-hidden">
+                        {searchClips.map((clip, index) => {
+                          const totalDuration = Math.max(...searchClips.map(c => c.end_time));
+                          const startPercent = (clip.start_time / totalDuration) * 100;
+                          const widthPercent = ((clip.end_time - clip.start_time) / totalDuration) * 100;
+                          
+                          return (
+                            <div
+                              key={index}
+                              className={`absolute h-full rounded transition-all cursor-pointer ${
+                                index === currentClipIndex
+                                  ? 'bg-primary'
+                                  : 'bg-primary/60 hover:bg-primary/80'
+                              }`}
+                              style={{
+                                left: `${startPercent}%`,
+                                width: `${widthPercent}%`
+                              }}
+                              onClick={() => {
+                                setCurrentClipIndex(index);
+                                onTimeJump(clip.start_time);
+                              }}
+                              title={`Clip ${index + 1}: ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}`}
+                            />
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Timeline markers */}
+                      <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                        <span>0:00</span>
+                        <span>{formatTime(Math.max(...searchClips.map(c => c.end_time)))}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Current clip details */}
+                  {searchClips[currentClipIndex] && (
+                    <div className="bg-card rounded-lg border p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h6 className="font-medium text-foreground mb-1">
+                            Clip {currentClipIndex + 1}: {formatTime(searchClips[currentClipIndex].start_time)} - {formatTime(searchClips[currentClipIndex].end_time)}
+                          </h6>
+                          <p className="text-sm text-muted-foreground">
+                            {searchClips[currentClipIndex].description}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {formatDuration(searchClips[currentClipIndex].end_time - searchClips[currentClipIndex].start_time)}
+                          </span>
+                          <span className={`text-xs font-medium px-2 py-1 rounded ${getConfidenceColor(searchClips[currentClipIndex].confidence)} bg-muted`}>
+                            {searchClips[currentClipIndex].confidence}%
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onTimeJump(searchClips[currentClipIndex].start_time)}
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                          <Play className="w-4 h-4" />
+                          Play this clip
+                        </button>
+                        <button
+                          onClick={() => navigateToClip(currentClipIndex - 1)}
+                          disabled={currentClipIndex === 0}
+                          className="bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          Previous
+                        </button>
+                        <button
+                          onClick={() => navigateToClip(currentClipIndex + 1)}
+                          disabled={currentClipIndex === searchClips.length - 1}
+                          className="bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Frames View */}
-              {(viewMode === 'frames' || searchClips.length === 0) && (
+              {viewMode === 'frames' && (
                 <div className="max-h-96 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-gray-500/50 scrollbar-track-transparent">
                   {searchResults.map((result, index) => (
                     <div
                       key={index}
-                      className="bg-gray-900/80 rounded-lg border border-gray-700 p-4 hover:bg-gray-800/80 transition-all duration-300 cursor-pointer group"
+                      className="bg-card rounded-lg border border-border p-4 hover:bg-muted/50 transition-all duration-300 cursor-pointer group"
                       onClick={() => onTimeJump(result.timestamp)}
                     >
                       <div className="flex gap-4">
                         {/* Frame Number & Thumbnail */}
                         <div className="flex flex-col items-center gap-2 flex-shrink-0">
-                          <div className="w-20 h-12 bg-gray-800 rounded flex items-center justify-center relative overflow-hidden">
-                            {result.frame_path && result.frame_path !== '/api/placeholder/120/68' ? (
+                          <div className="w-20 h-12 bg-muted rounded flex items-center justify-center relative overflow-hidden">
+                            {result.frame_path ? (
                               <img
                                 src={result.frame_path}
                                 alt={`Frame at ${formatTime(result.timestamp)}`}
@@ -548,12 +676,12 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                             ) : null}
                             <div
                               className="w-full h-full flex items-center justify-center"
-                              style={{ display: (result.frame_path && result.frame_path !== '/api/placeholder/120/68') ? 'none' : 'flex' }}
+                              style={{ display: result.frame_path ? 'none' : 'flex' }}
                             >
-                              <Eye className="w-6 h-6 text-gray-400" />
+                              <Eye className="w-6 h-6 text-muted-foreground" />
                             </div>
                           </div>
-                          <span className="text-xs text-gray-400 font-medium">#{index + 1}</span>
+                          <span className="text-xs text-muted-foreground font-medium">#{index + 1}</span>
                         </div>
 
                         {/* Content */}
@@ -562,11 +690,11 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                             <div className="flex-1 pr-2">
                               {/* Summary (concise) */}
                               {result.summary ? (
-                                <p className="text-white text-sm font-medium mb-1">
+                                <p className="text-foreground text-sm font-medium mb-1">
                                   {result.summary}
                                 </p>
                               ) : (
-                                <p className="text-white text-sm leading-relaxed group-hover:text-gray-300 transition-colors">
+                                <p className="text-foreground text-sm leading-relaxed group-hover:text-muted-foreground transition-colors">
                                   {result.description}
                                 </p>
                               )}
@@ -577,13 +705,13 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                                   {result.objects_detected.slice(0, 3).map((obj, objIndex) => (
                                     <span
                                       key={objIndex}
-                                      className="inline-block px-2 py-1 bg-gray-800 rounded text-xs text-gray-300 border border-gray-600"
+                                      className="inline-block px-2 py-1 bg-muted rounded text-xs text-muted-foreground border border-border"
                                     >
                                       {obj}
                                     </span>
                                   ))}
                                   {result.objects_detected.length > 3 && (
-                                    <span className="text-xs text-gray-400">
+                                    <span className="text-xs text-muted-foreground">
                                       +{result.objects_detected.length - 3} more
                                     </span>
                                   )}
@@ -591,14 +719,14 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                               )}
                             </div>
                             <div className="flex items-center gap-2 text-xs">
-                              <span className={`font-medium px-2 py-1 rounded ${getConfidenceColor(result.confidence)} bg-gray-800`}>
+                              <span className={`font-medium px-2 py-1 rounded ${getConfidenceColor(result.confidence)} bg-muted`}>
                                 {result.confidence}%
                               </span>
                             </div>
                           </div>
 
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-xs text-gray-400">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <Clock className="w-3 h-3" />
                               <span className="font-medium">{formatTime(result.timestamp)}</span>
                               {result.people_count !== undefined && (
@@ -617,7 +745,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                                     e.stopPropagation();
                                     toggleExpandResult(index);
                                   }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
                                 >
                                   {expandedResults.has(index) ? (
                                     <>
@@ -637,7 +765,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                                   e.stopPropagation();
                                   onTimeJump(result.timestamp);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity bg-white hover:bg-gray-200 text-black px-3 py-1 rounded text-xs font-medium flex items-center gap-1"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1 rounded text-xs font-medium flex items-center gap-1"
                               >
                                 <Eye className="w-3 h-3" />
                                 Jump to frame
@@ -647,8 +775,8 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
 
                           {/* Expanded detailed analysis */}
                           {expandedResults.has(index) && result.detailed_analysis && (
-                            <div className="mt-3 pt-3 border-t border-gray-700">
-                              <p className="text-sm text-gray-300 leading-relaxed">
+                            <div className="mt-3 pt-3 border-t border-border">
+                              <p className="text-sm text-muted-foreground leading-relaxed">
                                 {result.detailed_analysis}
                               </p>
                             </div>
@@ -661,20 +789,87 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
               )}
             </>
           ) : (
-            <div className="text-center py-8">
-              <Search className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-white mb-2">
-                No matches found for "{searchQuery}"
-              </p>
-              <p className="text-sm text-gray-400">
-                Try different keywords or be more specific about visual elements
-              </p>
+            <div className="text-center py-12">
+              <div className="max-w-md mx-auto">
+                <Search className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+                <h3 className="text-lg font-medium text-foreground mb-2">
+                  No matches found for "{searchQuery}"
+                </h3>
+                <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+                  Try different keywords or be more specific about visual elements. Search works best with objects, people, colors, or scenes.
+                </p>
+                
+                {/* Quick suggestions for failed searches */}
+                <div className="space-y-4">
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                    <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">🔧 Troubleshooting</h4>
+                    <div className="text-sm text-amber-700 dark:text-amber-300 space-y-2">
+                      <div>• <strong>For uploaded videos:</strong> Make sure the video file exists and is properly processed</div>
+                      <div>• <strong>For YouTube videos:</strong> Visual search works best with recently uploaded content</div>
+                      <div>• <strong>Search tips:</strong> Try broader terms like "person" instead of specific names</div>
+                      <div>• <strong>Best results:</strong> Clear, prominent objects work better than small details</div>
+                    </div>
+                    
+                    <div className="mt-3 pt-3 border-t border-amber-200 dark:border-amber-700 space-y-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setIsSearching(true);
+                            await apiService.analyzeVideoFrames(videoId);
+                            toast({
+                              title: "Frame Analysis Started",
+                              description: "Video frames are being analyzed. This may take a few minutes. Try your search again shortly.",
+                            });
+                          } catch (error) {
+                            toast({
+                              title: "Analysis Failed",
+                              description: "Could not start frame analysis. Please try again.",
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setIsSearching(false);
+                          }
+                        }}
+                        disabled={isSearching}
+                        className="w-full text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded font-medium transition-colors disabled:opacity-50"
+                      >
+                        {isSearching ? 'Processing...' : 'Analyze Video Frames'}
+                      </button>
+                      
+                      <button
+                        onClick={() => {
+                          setSearchQuery('person');
+                          handleSearch({ preventDefault: () => {} } as React.FormEvent);
+                        }}
+                        disabled={isSearching}
+                        className="w-full text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded font-medium transition-colors disabled:opacity-50"
+                      >
+                        🧪 Test Search "person"
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium mb-2">Try these proven searches:</p>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {['person', 'people', 'microphone', 'background', 'speaker', 'text', 'screen', 'chair'].map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onClick={() => setSearchQuery(suggestion)}
+                          className="px-3 py-1.5 text-xs bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground rounded-full transition-all border border-border hover:border-primary"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
       )}
-
-
     </div>
   );
 };

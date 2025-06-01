@@ -808,3 +808,97 @@ class GeminiService:
             return context
         except:
             return ""
+    
+    async def analyze_frame_for_search(self, frame_path: str, search_query: str) -> Dict:
+        """
+        Analyze a single frame to see if it contains the search query.
+        Direct, simple implementation for visual search.
+        """
+        try:
+            if not os.path.exists(frame_path):
+                return {"match": False, "confidence": 0.0, "description": "Frame not found"}
+            
+            # Upload image to Gemini
+            image_file = genai.upload_file(path=frame_path)
+            
+            # Create focused search prompt
+            prompt = f"""
+            Analyze this image and determine if it contains: "{search_query}"
+            
+            TASK: Look for "{search_query}" in this image.
+            
+            SEARCH CRITERIA:
+            - Look for objects, people, colors, text, or scenes matching "{search_query}"
+            - Consider partial matches and semantic variations
+            - For "red car" - look for any car that is red or reddish
+            - For "person" - look for any human beings visible
+            - For "text" - look for any readable text or writing
+            
+            RESPONSE FORMAT (JSON only):
+            {{
+                "match": true/false,
+                "confidence": 0.0-1.0,
+                "description": "Brief description of what matches or why no match"
+            }}
+            
+            Be specific about what you see. If you find a match, describe it clearly.
+            RESPOND WITH ONLY THE JSON, NO OTHER TEXT.
+            """
+            
+            # Generate analysis
+            response = self.model.generate_content([prompt, image_file])
+            
+            # Clean up uploaded image
+            try:
+                genai.delete_file(image_file.name)
+            except:
+                pass
+            
+            # Parse response
+            try:
+                response_text = response.text.strip()
+                
+                # Clean JSON from response
+                if "```json" in response_text:
+                    start = response_text.find("```json") + 7
+                    end = response_text.find("```", start)
+                    response_text = response_text[start:end].strip()
+                elif "{" in response_text:
+                    start = response_text.find("{")
+                    end = response_text.rfind("}") + 1
+                    response_text = response_text[start:end]
+                
+                import json
+                result = json.loads(response_text)
+                
+                logger.info(f"Frame analysis for '{search_query}': {result}")
+                return result
+                
+            except Exception as e:
+                logger.error(f"Error parsing frame analysis response: {e}")
+                logger.error(f"Raw response: {response.text}")
+                
+                # Fallback - check if response mentions the query
+                response_lower = response.text.lower()
+                query_lower = search_query.lower()
+                
+                if any(word in response_lower for word in query_lower.split()):
+                    return {
+                        "match": True,
+                        "confidence": 0.6,
+                        "description": f"Possible match for '{search_query}' detected"
+                    }
+                else:
+                    return {
+                        "match": False,
+                        "confidence": 0.0,
+                        "description": f"No match for '{search_query}' found"
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Error in frame analysis for search: {e}")
+            return {
+                "match": False,
+                "confidence": 0.0,
+                "description": f"Error analyzing frame: {str(e)}"
+            }

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -20,6 +20,14 @@ try:
     from app.services.scene_detector import SceneDetector
     from app.services.thumbnail_service import ThumbnailService
     from app.services.enhanced_video_analysis import EnhancedVideoAnalysis
+    from app.services.native_video_search import (
+        NativeVideoSearchService,
+        search_objects,
+        count_occurrences,
+        find_color_objects,
+        find_text,
+        find_scenes
+    )
     ENHANCED_FEATURES_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Enhanced features not available: {e}")
@@ -153,14 +161,144 @@ def _create_clip_from_frames(frames: List[SearchResult]) -> ClipResult:
 async def visual_search(
     request: Request,
     search_request: VisualSearchRequest,
+    use_native: bool = True,  # New query parameter to control search type
     db: Session = Depends(get_db)
 ):
-    """Enhanced visual search with direct image embeddings, hybrid search, and batch video processing"""
+    """Enhanced visual search with native video search, direct image embeddings, hybrid search, and batch video processing"""
     try:
         # Get video
         video = db.query(Video).filter(Video.id == search_request.video_id).first()
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
+        
+        # DIAGNOSTIC LOGGING
+        logger.info(f"🔍 VISUAL SEARCH DEBUG for query: '{search_request.query}'")
+        logger.info(f"Video ID: {video.id}, Title: {video.title}")
+        logger.info(f"Video Type: {video.video_type}")
+        logger.info(f"File Path: {video.file_path}")
+        logger.info(f"File exists: {os.path.exists(video.file_path) if video.file_path else False}")
+        logger.info(f"Enhanced features available: {ENHANCED_FEATURES_AVAILABLE}")
+        logger.info(f"Use native: {use_native}")
+
+        # DIRECT VISUAL SEARCH - Simple implementation that works (try this first)
+        if video.file_path and os.path.exists(video.file_path):
+            logger.info(f"🎯 Trying direct visual search for: {search_request.query}")
+            direct_results = await _direct_visual_search(
+                video.file_path, 
+                search_request.query, 
+                search_request.max_results
+            )
+            if direct_results:
+                logger.info(f"✅ Direct search succeeded with {len(direct_results.results)} results")
+                return direct_results
+
+        # IMPROVEMENT 1: Native video search using Gemini's video understanding capabilities
+        if (use_native and 
+            ENHANCED_FEATURES_AVAILABLE and
+            video.video_type == "upload" and
+            video.file_path and
+            os.path.exists(video.file_path)):
+            
+            logger.info(f"Attempting native video search for query: '{search_request.query}'")
+            try:
+                # Initialize native search service
+                native_search_service = NativeVideoSearchService()
+                
+                # Determine search type based on query
+                query_lower = search_request.query.lower()
+                search_type = "general"
+                
+                if any(word in query_lower for word in ['how many', 'count', 'number of']):
+                    search_type = "counting"
+                elif any(word in query_lower for word in ['text', 'sign', 'writing', 'label']):
+                    search_type = "text"
+                elif any(word in query_lower for word in ['scene', 'background', 'setting', 'location']):
+                    search_type = "scene"
+                elif any(word in query_lower for word in ['red', 'blue', 'green', 'yellow', 'color']):
+                    search_type = "color"
+                else:
+                    search_type = "object"
+                
+                # Perform native video search
+                clips = await native_search_service.search_visual_content(
+                    video_path=video.file_path,
+                    query=search_request.query,
+                    search_type=search_type
+                )
+                
+                if clips:
+                    # Convert clips to SearchResult format
+                    results = []
+                    all_frames = []
+                    
+                    for clip in clips[:search_request.max_results]:
+                        # Create a SearchResult for the clip's best moment
+                        result = SearchResult(
+                            timestamp=clip.start_time,
+                            confidence=clip.confidence,
+                            description=clip.description,
+                            frame_path=clip.thumbnail_path if hasattr(clip, 'thumbnail_path') else f"/api/search/{video.id}/frame?timestamp={clip.start_time}",
+                            summary=f"Clip {clip.start_time:.1f}s - {clip.end_time:.1f}s: {clip.description[:100]}",
+                            detailed_analysis=clip.description
+                        )
+                        results.append(result)
+                        
+                        # Also create frame results for the clip
+                        clip_duration = clip.end_time - clip.start_time
+                        num_frames = min(5, max(2, int(clip_duration / 2)))  # 2-5 frames per clip
+                        
+                        for i in range(num_frames):
+                            frame_time = clip.start_time + (i * clip_duration / num_frames)
+                            frame_result = SearchResult(
+                                timestamp=frame_time,
+                                confidence=clip.confidence * (0.9 - i * 0.1),  # Slightly decrease confidence for later frames
+                                description=f"Frame {i+1} from clip: {clip.description[:100]}",
+                                frame_path=f"/api/search/{video.id}/frame?timestamp={frame_time}",
+                                summary=clip.description[:100]
+                            )
+                            all_frames.append(frame_result)
+                    
+                    # Group results into clips
+                    clip_results = []
+                    for clip in clips[:max(5, search_request.max_results // 2)]:
+                        # Get frames for this clip
+                        clip_frames = [f for f in all_frames if clip.start_time <= f.timestamp <= clip.end_time]
+                        
+                        clip_result = ClipResult(
+                            start_time=clip.start_time,
+                            end_time=clip.end_time,
+                            confidence=clip.confidence,
+                            description=clip.description,
+                            frame_count=len(clip_frames),
+                            frames=clip_frames
+                        )
+                        clip_results.append(clip_result)
+                    
+                    # Determine query type and generate direct answer
+                    direct_answer = None
+                    query_type = search_type
+                    
+                    if search_type == "counting":
+                        direct_answer = f"Found {len(clips)} instances of '{search_request.query}' in the video"
+                    elif search_type == "object":
+                        direct_answer = f"Object '{search_request.query}' detected in {len(clips)} clips"
+                    elif search_type == "scene":
+                        direct_answer = f"Scene analysis found {len(clips)} relevant moments"
+                    elif search_type == "text":
+                        direct_answer = f"Text matching '{search_request.query}' found in {len(clips)} locations"
+                    
+                    return VisualSearchResponse(
+                        query=search_request.query,
+                        results=results,
+                        clips=clip_results,
+                        total_results=len(clips),
+                        direct_answer=direct_answer,
+                        query_type=query_type,
+                        processing_method="native_video_search"
+                    )
+                    
+            except Exception as e:
+                logger.warning(f"Native video search failed, falling back to other methods: {e}")
 
         # IMPROVEMENT 3: Batch video processing using Gemini's video API
         if (video.video_type == "upload" and
@@ -217,9 +355,16 @@ async def visual_search(
                 logger.warning(f"Batch video processing failed, falling back: {e}")
 
         # IMPROVEMENT 1 & 2: Enhanced vector service with direct image embeddings and hybrid search
-        enhanced_vector_service = EnhancedVectorService()
+        enhanced_vector_service = None
+        if ENHANCED_FEATURES_AVAILABLE:
+            try:
+                enhanced_vector_service = EnhancedVectorService()
+            except Exception as e:
+                logger.warning(f"Failed to initialize EnhancedVectorService: {e}")
 
-        if enhanced_vector_service.available:
+        vector_service = VectorService()  # Fallback
+
+        if enhanced_vector_service and enhanced_vector_service.available:
             logger.info(f"Using enhanced hybrid search for query: '{search_request.query}'")
             try:
                 # Perform hybrid search (combines keyword + vector + image embeddings)
@@ -284,7 +429,8 @@ async def visual_search(
 
         # Fallback to original vector search
         vector_service = VectorService()
-        if vector_service.available:
+        # Only use vector service if it has real embeddings (not hash-based fallback)
+        if vector_service.available and getattr(vector_service, 'use_real_embeddings', False):
             logger.debug(f"Using standard vector search for query: '{search_request.query}'")
             search_results = await vector_service.search_frames(
                 query=search_request.query,
@@ -313,17 +459,27 @@ async def visual_search(
                 .order_by(VideoFrame.timestamp.asc())\
                 .all()
 
+            logger.info(f"🔍 Found {len(frames)} frames in database for video {search_request.video_id}")
             results = await _enhanced_semantic_search(search_request.query, frames)
+            logger.info(f"🔍 Semantic search returned {len(results)} results for query '{search_request.query}'")
 
         # Group results into clips
         clips = group_frames_into_clips(results)
         clips.sort(key=lambda c: c.confidence, reverse=True)
+
+        # Provide clear feedback when no results are found
+        direct_answer = None
+        if len(results) == 0:
+            direct_answer = f"No instances of '{search_request.query}' found in this video. The search analyzed frame descriptions and found no semantic matches."
+        else:
+            direct_answer = f"Found {len(results)} instances of '{search_request.query}' in the video"
 
         return VisualSearchResponse(
             query=search_request.query,
             results=results[:search_request.max_results],
             clips=clips[:max(5, search_request.max_results // 2)],
             total_results=len(results),
+            direct_answer=direct_answer,
             processing_method="semantic_search"
         )
 
@@ -333,12 +489,46 @@ async def visual_search(
         logger.error(f"Error in enhanced visual search: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def _validate_semantic_match(query: str, description: str, exact_matches: int, semantic_matches: int) -> bool:
+    """Validate that a semantic match is genuine and not a false positive"""
+    if not description:
+        return False
+
+    # Must have at least one exact match OR multiple semantic matches
+    if exact_matches > 0:
+        return True
+
+    # For semantic-only matches, require multiple matches or high-confidence terms
+    if semantic_matches >= 2:
+        return True
+
+    # Special case: single semantic match must be very specific
+    query_lower = query.lower()
+    description_lower = description.lower()
+
+    # High-confidence single semantic matches
+    high_confidence_terms = {
+        'car': ['vehicle', 'automobile', 'truck', 'van', 'suv'],
+        'person': ['human', 'individual', 'man', 'woman'],
+        'building': ['structure', 'house', 'office', 'tower'],
+        'text': ['sign', 'writing', 'words', 'letters'],
+        'screen': ['monitor', 'display', 'television', 'computer']
+    }
+
+    for query_word in query_lower.split():
+        if query_word in high_confidence_terms:
+            for term in high_confidence_terms[query_word]:
+                if term in description_lower:
+                    return True
+
+    return False
+
 async def _enhanced_semantic_search(query: str, frames: List[VideoFrame]) -> List[SearchResult]:
-    """Enhanced semantic visual search using detailed frame descriptions"""
+    """Enhanced semantic visual search using detailed frame descriptions with strict validation"""
     results = []
     query_lower = query.lower()
     query_words = set(query_lower.split())
-    
+
     # Enhanced semantic mappings for better object detection
     semantic_mappings = {
         'car': ['vehicle', 'automobile', 'truck', 'van', 'suv', 'sedan', 'transportation', 'driving'],
@@ -354,15 +544,16 @@ async def _enhanced_semantic_search(query: str, frames: List[VideoFrame]) -> Lis
         'food': ['meal', 'eating', 'restaurant', 'kitchen', 'cooking', 'dining'],
         'animal': ['pet', 'dog', 'cat', 'bird', 'wildlife', 'creature']
     }
-    
+
     # Expand query with semantic alternatives
     expanded_query_words = set(query_words)
     for word in query_words:
         if word in semantic_mappings:
             expanded_query_words.update(semantic_mappings[word])
-    
-    logger.debug(f"Enhanced search for '{query}' with expanded terms: {expanded_query_words}")
-    
+
+    logger.info(f"🔍 Enhanced search for '{query}' with expanded terms: {expanded_query_words}")
+    logger.info(f"🔍 Processing {len(frames)} frames")
+
     for frame in frames:
         confidence = 0.0
         description = ""
@@ -370,9 +561,23 @@ async def _enhanced_semantic_search(query: str, frames: List[VideoFrame]) -> Lis
         if frame.description:
             description_lower = frame.description.lower()
             
-            # Multi-level matching strategy
-            exact_matches = sum(1 for word in query_words if word in description_lower)
-            semantic_matches = sum(1 for word in expanded_query_words if word in description_lower)
+            # Multi-level matching strategy with WORD BOUNDARIES to prevent partial matches
+            import re
+
+            # Use word boundaries to ensure we match complete words only
+            exact_matches = 0
+            for word in query_words:
+                # Create regex pattern with word boundaries
+                pattern = r'\b' + re.escape(word) + r'\b'
+                if re.search(pattern, description_lower, re.IGNORECASE):
+                    exact_matches += 1
+
+            semantic_matches = 0
+            for word in expanded_query_words:
+                if word not in query_words:  # Don't double-count exact matches
+                    pattern = r'\b' + re.escape(word) + r'\b'
+                    if re.search(pattern, description_lower, re.IGNORECASE):
+                        semantic_matches += 1
             
             # Color + object combination matching (e.g., "red car")
             color_object_bonus = 0.0
@@ -384,85 +589,213 @@ async def _enhanced_semantic_search(query: str, frames: List[VideoFrame]) -> Lis
                 query_objects = [w for w in query_words if w in objects]
                 
                 if query_colors and query_objects:
-                    color_in_desc = any(color in description_lower for color in query_colors)
-                    object_in_desc = any(obj in description_lower for obj in query_objects)
+                    # Use word boundaries for color and object matching too
+                    color_in_desc = any(re.search(r'\b' + re.escape(color) + r'\b', description_lower, re.IGNORECASE) for color in query_colors)
+                    object_in_desc = any(re.search(r'\b' + re.escape(obj) + r'\b', description_lower, re.IGNORECASE) for obj in query_objects)
                     if color_in_desc and object_in_desc:
                         color_object_bonus = 15.0  # 15% bonus for color+object match
             
-            # Calculate confidence score (0-100 range)
+            # Calculate confidence score (0-100 range) - STRICT MATCHING WITH VALIDATION
             if exact_matches > 0 or semantic_matches > 0:
-                # Base confidence from matches
-                exact_score = (exact_matches / len(query_words)) * 60 if query_words else 0
-                semantic_score = (semantic_matches / len(expanded_query_words)) * 20 if expanded_query_words else 0
-                
-                # Total confidence
-                confidence = min(95.0, exact_score + semantic_score + color_object_bonus + 10.0)
-                
-                # Extract relevant portion of description
+                # VALIDATE: Check if this is a genuine semantic match
+                is_valid_match = _validate_semantic_match(query, frame.description, exact_matches, semantic_matches)
+
+                if not is_valid_match:
+                    logger.debug(f"❌ Rejected invalid semantic match at {frame.timestamp:.1f}s for query '{query}'")
+                    continue
+
+                # Require at least one exact match for high confidence
+                if exact_matches > 0:
+                    exact_score = (exact_matches / len(query_words)) * 70 if query_words else 0
+                    semantic_score = (semantic_matches / len(expanded_query_words)) * 15 if expanded_query_words else 0
+                    base_bonus = 15.0  # Bonus for having exact matches
+                else:
+                    # Lower confidence for semantic-only matches
+                    exact_score = 0
+                    semantic_score = (semantic_matches / len(expanded_query_words)) * 25 if expanded_query_words else 0
+                    base_bonus = 0.0
+
+                # Total confidence - more conservative scoring
+                confidence = min(95.0, exact_score + semantic_score + color_object_bonus + base_bonus)
+
+                # Extract relevant portion of description using word boundaries
                 sentences = frame.description.split('.')
                 relevant_sentence = ""
                 for sentence in sentences:
-                    if any(word in sentence.lower() for word in expanded_query_words):
+                    sentence_lower = sentence.lower()
+                    # Check if any query word appears as a complete word in this sentence
+                    if any(re.search(r'\b' + re.escape(word) + r'\b', sentence_lower, re.IGNORECASE) for word in expanded_query_words):
                         relevant_sentence = sentence.strip()
                         break
-                
+
                 if not relevant_sentence and sentences:
                     relevant_sentence = sentences[0].strip()
-                
+
                 description = f"Match for '{query}': {relevant_sentence[:200]}..."
         
-        # Fallback to pattern-based detection if no description
-        if confidence == 0.0 and not frame.description:
-            confidence, description = _pattern_based_detection(query_lower, frame.timestamp, query)
-        
-        if confidence > 10.0:  # Lower threshold for more results
+        # STRICT MATCHING: Only include frames with actual semantic matches
+        # No fallback to pattern-based detection to prevent false positives
+
+        if confidence > 30.0:  # Higher threshold to ensure quality matches
+            logger.debug(f"✅ Found match at {frame.timestamp:.1f}s with confidence {confidence:.1f}% for query '{query}'")
+            logger.debug(f"   Exact matches: {exact_matches if 'exact_matches' in locals() else 0}, Semantic matches: {semantic_matches if 'semantic_matches' in locals() else 0}")
+            logger.debug(f"   Description: {description[:100]}...")
+
             results.append(SearchResult(
                 timestamp=frame.timestamp,
                 confidence=round(confidence, 1),
                 description=description,
                 frame_path=frame.frame_path
             ))
+        elif confidence > 0:
+            logger.debug(f"❌ Rejected match at {frame.timestamp:.1f}s with low confidence {confidence:.1f}% for query '{query}'")
     
     # Sort by confidence (highest first)
     results.sort(key=lambda x: x.confidence, reverse=True)
-    logger.debug(f"Enhanced semantic search returned {len(results)} results for '{query}'")
+
+    if len(results) == 0:
+        logger.info(f"🔍 No semantic matches found for query '{query}' - this is correct if the content is not in the video")
+    else:
+        logger.info(f"🔍 Enhanced semantic search returned {len(results)} valid results for '{query}'")
+
     return results
 
 def _pattern_based_detection(query_lower: str, timestamp: float, original_query: str) -> tuple[float, str]:
-    """Fallback pattern-based detection for frames without descriptions"""
-    confidence = 0.0
-    description = ""
-    
-    # Pattern matching with confidence scores (0-100 range)
-    patterns = {
-        'car': (30, 15, 70.0, "Vehicle detected"),
-        'person': (25, 12, 65.0, "Person detected"),
-        'people': (25, 12, 65.0, "People detected"),
-        'text': (40, 18, 60.0, "Text/signage detected"),
-        'sign': (40, 18, 60.0, "Sign detected"),
-        'red': (35, 20, 55.0, "Red object detected"),
-        'blue': (28, 14, 58.0, "Blue object detected"),
-        'green': (33, 16, 52.0, "Green object detected"),
-        'building': (120, 60, 60.0, "Building/structure detected"),
-        'house': (120, 60, 60.0, "House/building detected"),
-        'screen': (45, 22, 50.0, "Screen/display detected"),
-        'phone': (50, 25, 48.0, "Phone/device detected")
-    }
-    
-    for keyword, (interval, duration, base_conf, desc) in patterns.items():
-        if keyword in query_lower:
-            if timestamp % interval < duration:
-                # Add small variation based on timestamp
-                confidence = base_conf + (timestamp % 20) * 0.5
-                description = f"{desc} at {timestamp:.1f}s"
+    """Fallback pattern-based detection for frames without descriptions - DISABLED to prevent false positives"""
+    # IMPORTANT: This function has been disabled to prevent false positives
+    # Only return matches if we have actual frame descriptions to analyze
+    return 0.0, ""
+
+async def _direct_visual_search(video_path: str, query: str, max_results: int = 10) -> Optional[VisualSearchResponse]:
+    """
+    Direct, simple visual search that actually works.
+    Extracts frames and analyzes them with Gemini Vision.
+    """
+    try:
+        import cv2
+        import tempfile
+        
+        logger.info(f"🎯 Starting direct visual search for '{query}' on {video_path}")
+        
+        # Open video file
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"Could not open video: {video_path}")
+            return None
+        
+        # Get video properties
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
+        
+        logger.info(f"Video: {duration:.1f}s, {fps:.1f} FPS, {total_frames} frames")
+        
+        # Extract frames every 5 seconds for analysis
+        interval_seconds = 5
+        frame_interval = int(fps * interval_seconds)
+        
+        results = []
+        clips = []
+        
+        # Initialize Gemini service
+        try:
+            from app.services.gemini_service import GeminiService
+            gemini_service = GeminiService()
+        except Exception as e:
+            logger.error(f"Could not initialize Gemini service: {e}")
+            return None
+        
+        frame_count = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
                 break
-    
-    # Generic fallback
-    if confidence == 0.0 and timestamp % 45 < 20:
-        confidence = 40.0 + (timestamp % 8) * 1.0
-        description = f"Potential match for '{original_query}' at {timestamp:.1f}s"
-    
-    return min(100.0, confidence), description
+            
+            # Process frame at intervals
+            if frame_count % frame_interval == 0:
+                timestamp = frame_count / fps
+                
+                # Save frame to temporary file
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+                    cv2.imwrite(tmp_file.name, frame)
+                    
+                    # Analyze frame with Gemini Vision
+                    try:
+                        analysis = await gemini_service.analyze_frame_for_search(
+                            tmp_file.name, 
+                            query
+                        )
+                        
+                        if analysis.get("match", False):
+                            confidence = analysis.get("confidence", 0.5)
+                            description = analysis.get("description", f"Match for '{query}' found")
+                            
+                            # Create search result
+                            result = SearchResult(
+                                timestamp=timestamp,
+                                confidence=confidence * 100,
+                                description=description,
+                                frame_path=f"/api/search/frame/{timestamp}",
+                                summary=f"Found '{query}' at {timestamp:.1f}s"
+                            )
+                            results.append(result)
+                            
+                            # Create clip (5-10 seconds around the match)
+                            clip_start = max(0, timestamp - 2.5)
+                            clip_end = min(duration, timestamp + 7.5)
+                            
+                            clip = ClipResult(
+                                start_time=clip_start,
+                                end_time=clip_end,
+                                confidence=confidence * 100,
+                                description=f"Clip containing '{query}' - {description}",
+                                frame_count=1,
+                                frames=[result]
+                            )
+                            clips.append(clip)
+                            
+                            logger.info(f"✅ Found '{query}' at {timestamp:.1f}s with confidence {confidence:.2f}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error analyzing frame at {timestamp:.1f}s: {e}")
+                        continue
+                    
+                    # Clean up temp file
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+            
+            frame_count += 1
+            
+            # Stop if we have enough results
+            if len(results) >= max_results:
+                break
+        
+        cap.release()
+        
+        # Sort results by confidence
+        results.sort(key=lambda x: x.confidence, reverse=True)
+        clips.sort(key=lambda x: x.confidence, reverse=True)
+        
+        logger.info(f"🎯 Direct search completed: {len(results)} results for '{query}'")
+        
+        if results:
+            return VisualSearchResponse(
+                query=query,
+                results=results[:max_results],
+                clips=clips[:max_results],
+                total_results=len(results),
+                direct_answer=f"Found {len(results)} instances of '{query}' in the video",
+                query_type="direct_visual_search",
+                processing_method="direct_frame_analysis"
+            )
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error in direct visual search: {e}")
+        return None
 
 @router.get("/{video_id}/frames")
 async def get_video_frames(
@@ -525,8 +858,14 @@ async def analyze_video_frames(
 
         gemini_service = request.app.state.gemini_service
 
-        # Try enhanced vector service first (with direct image embeddings)
-        enhanced_vector_service = EnhancedVectorService()
+        # Try enhanced vector service first (IMPROVEMENT 1: Direct image embeddings)
+        enhanced_vector_service = None
+        if ENHANCED_FEATURES_AVAILABLE:
+            try:
+                enhanced_vector_service = EnhancedVectorService()
+            except Exception as e:
+                logger.warning(f"Failed to initialize EnhancedVectorService: {e}")
+
         vector_service = VectorService()  # Fallback
 
         analyzed_count = 0
@@ -543,7 +882,7 @@ async def analyze_video_frames(
                     frame.description = analysis["description"]
 
                     # Try enhanced vector service first (IMPROVEMENT 1: Direct image embeddings)
-                    if enhanced_vector_service.available:
+                    if enhanced_vector_service and enhanced_vector_service.available:
                         success = await enhanced_vector_service.add_enhanced_frame_embedding(
                             frame_id=f"frame_{frame.id}",
                             description=analysis["description"],
@@ -599,7 +938,7 @@ async def analyze_video_frames(
             db.commit()
 
         # Get service statistics
-        enhanced_stats = enhanced_vector_service.get_stats() if enhanced_vector_service.available else {}
+        enhanced_stats = enhanced_vector_service.get_stats() if enhanced_vector_service and enhanced_vector_service.available else {}
 
         return {
             "message": f"Analyzed {analyzed_count} frames with enhanced embeddings",
@@ -607,7 +946,7 @@ async def analyze_video_frames(
             "total_frames": len(frames),
             "video_total_frames": total_frames,
             "video_analyzed_frames": analyzed_frames,
-            "enhanced_embeddings": enhanced_vector_service.available,
+            "enhanced_embeddings": enhanced_vector_service.available if enhanced_vector_service else False,
             "service_stats": enhanced_stats
         }
 
@@ -1010,4 +1349,376 @@ async def generate_video_thumbnails(
         raise
     except Exception as e:
         logger.error(f"Error generating thumbnails: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Native Video Search Endpoints using Gemini 2.5
+
+class NativeSearchRequest(BaseModel):
+    video_id: int
+    query: str
+    search_type: str = "general"  # general, object, counting, color, text, scene
+
+class NativeSearchResponse(BaseModel):
+    query: str
+    search_type: str
+    clips: List[Dict]
+    total_clips: int
+    processing_time: float
+    
+class CountingRequest(BaseModel):
+    video_id: int
+    element: str
+    count_type: str = "unique"  # unique or total
+
+class CountingResponse(BaseModel):
+    element: str
+    count_type: str
+    total_count: int
+    instances: List[Dict]
+    temporal_pattern: str
+    clips: List[Dict]
+    confidence: float
+
+class ColorObjectRequest(BaseModel):
+    video_id: int
+    color: str
+    object_type: str
+
+@router.post("/native/search", response_model=NativeSearchResponse)
+async def native_video_search(
+    search_request: NativeSearchRequest,
+    db: Session = Depends(get_db)
+):
+    """Native video search using Gemini 2.5's video understanding capabilities"""
+    try:
+        import time
+        start_time = time.time()
+        
+        # Get video
+        video = db.query(Video).filter(Video.id == search_request.video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path or not os.path.exists(video.file_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+        
+        # Initialize native search service
+        search_service = NativeVideoSearchService()
+        
+        # Perform search based on type
+        clips = await search_service.search_visual_content(
+            video_path=video.file_path,
+            query=search_request.query,
+            search_type=search_request.search_type
+        )
+        
+        # Convert clips to dict format
+        clips_data = [clip.to_dict() for clip in clips]
+        
+        processing_time = time.time() - start_time
+        
+        return NativeSearchResponse(
+            query=search_request.query,
+            search_type=search_request.search_type,
+            clips=clips_data,
+            total_clips=len(clips_data),
+            processing_time=round(processing_time, 2)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in native video search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/native/count", response_model=CountingResponse)
+async def native_count_elements(
+    counting_request: CountingRequest,
+    db: Session = Depends(get_db)
+):
+    """Count visual elements in video using native video understanding"""
+    try:
+        # Get video
+        video = db.query(Video).filter(Video.id == counting_request.video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path or not os.path.exists(video.file_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+        
+        # Perform counting
+        result = await count_occurrences(
+            video.file_path,
+            counting_request.element,
+            unique_only=(counting_request.count_type == "unique")
+        )
+        
+        return CountingResponse(
+            element=counting_request.element,
+            count_type=counting_request.count_type,
+            total_count=result.get("total_count", 0),
+            instances=result.get("instances", []),
+            temporal_pattern=result.get("temporal_pattern", ""),
+            clips=result.get("clips", []),
+            confidence=result.get("confidence", 0.8)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in native counting: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/native/color-object")
+async def native_color_object_search(
+    color_request: ColorObjectRequest,
+    db: Session = Depends(get_db)
+):
+    """Search for specific color + object combinations"""
+    try:
+        # Get video
+        video = db.query(Video).filter(Video.id == color_request.video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path or not os.path.exists(video.file_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+        
+        # Search for color + object
+        clips = await find_color_objects(
+            video.file_path,
+            color_request.color,
+            color_request.object_type
+        )
+        
+        return {
+            "query": f"{color_request.color} {color_request.object_type}",
+            "clips": clips,
+            "total_clips": len(clips),
+            "search_type": "color_object_combo"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in color-object search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/native/text-search")
+async def native_text_search(
+    video_id: int,
+    text: str,
+    db: Session = Depends(get_db)
+):
+    """Search for text appearing in video"""
+    try:
+        # Get video
+        video = db.query(Video).filter(Video.id == video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path or not os.path.exists(video.file_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+        
+        # Search for text
+        clips = await find_text(video.file_path, text)
+        
+        return {
+            "query": text,
+            "clips": clips,
+            "total_clips": len(clips),
+            "search_type": "text_detection"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in text search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/native/scene-search")
+async def native_scene_search(
+    video_id: int,
+    scene_type: str,
+    db: Session = Depends(get_db)
+):
+    """Search for specific types of scenes"""
+    try:
+        # Get video
+        video = db.query(Video).filter(Video.id == video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path or not os.path.exists(video.file_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+        
+        # Search for scenes
+        clips = await find_scenes(video.file_path, scene_type)
+        
+        return {
+            "query": scene_type,
+            "clips": clips,
+            "total_clips": len(clips),
+            "search_type": "scene_analysis"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in scene search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/native/find-all")
+async def native_find_all_occurrences(
+    video_id: int,
+    element: str,
+    db: Session = Depends(get_db)
+):
+    """Find all occurrences of a visual element throughout the video"""
+    try:
+        # Get video
+        video = db.query(Video).filter(Video.id == video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path or not os.path.exists(video.file_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+        
+        # Initialize service and find all occurrences
+        search_service = NativeVideoSearchService()
+        clips = await search_service.find_all_occurrences(video.file_path, element)
+        
+        # Convert to dict format
+        clips_data = [clip.to_dict() for clip in clips]
+        
+        return {
+            "element": element,
+            "clips": clips_data,
+            "total_occurrences": len(clips_data),
+            "search_type": "exhaustive_search"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error finding all occurrences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/native/cleanup/{video_id}")
+async def cleanup_native_upload(
+    video_id: int,
+    db: Session = Depends(get_db)
+):
+    """Clean up uploaded video from Gemini to free resources"""
+    try:
+        # Get video
+        video = db.query(Video).filter(Video.id == video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path:
+            return {"message": "No video file to clean up"}
+        
+        # Initialize service and cleanup
+        search_service = NativeVideoSearchService()
+        success = await search_service.cleanup_upload(video.file_path)
+        
+        return {
+            "video_id": video_id,
+            "cleanup_success": success,
+            "message": "Video upload cleaned up from Gemini" if success else "No upload found to clean"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up video upload: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{video_id}/frame")
+async def get_video_frame_at_timestamp(
+    video_id: int,
+    timestamp: float,
+    size: str = "medium",
+    db: Session = Depends(get_db)
+):
+    """Get a frame from the video at a specific timestamp"""
+    try:
+        from fastapi.responses import FileResponse
+        import cv2
+        import tempfile
+        
+        # Get video
+        video = db.query(Video).filter(Video.id == video_id).first()
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        if not video.file_path or not os.path.exists(video.file_path):
+            # Return a placeholder image if video file not found
+            raise HTTPException(status_code=404, detail="Video file not found")
+        
+        # Initialize thumbnail service if available
+        thumbnail_service = None
+        if ENHANCED_FEATURES_AVAILABLE:
+            try:
+                thumbnail_service = ThumbnailService()
+            except Exception as e:
+                logger.warning(f"Could not initialize thumbnail service: {e}")
+        
+        # Try to use thumbnail service first
+        if thumbnail_service:
+            try:
+                thumbnail_path = thumbnail_service.get_frame_at_timestamp(
+                    video.file_path,
+                    timestamp,
+                    size=size
+                )
+                if thumbnail_path and os.path.exists(thumbnail_path):
+                    return FileResponse(
+                        thumbnail_path,
+                        media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=3600"}
+                    )
+            except Exception as e:
+                logger.warning(f"Thumbnail service failed: {e}")
+        
+        # Fallback to direct frame extraction
+        cap = cv2.VideoCapture(video.file_path)
+        try:
+            # Set position to timestamp
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_number = int(timestamp * fps)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            
+            # Read frame
+            ret, frame = cap.read()
+            if not ret:
+                raise HTTPException(status_code=404, detail="Could not extract frame")
+            
+            # Resize based on size parameter
+            sizes = {
+                "small": (120, 68),
+                "medium": (240, 135),
+                "large": (480, 270),
+                "timeline": (160, 90)
+            }
+            
+            target_size = sizes.get(size, sizes["medium"])
+            frame = cv2.resize(frame, target_size)
+            
+            # Save to temporary file
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                cv2.imwrite(tmp.name, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                return FileResponse(
+                    tmp.name,
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+                
+        finally:
+            cap.release()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error extracting frame: {e}")
         raise HTTPException(status_code=500, detail=str(e))

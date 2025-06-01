@@ -65,28 +65,63 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ videoId, videoUrl, onTime
     setIsTyping(true);
 
     try {
+      console.log(`🤖 Sending chat message for video ${videoId}: "${currentMessage}"`);
+      
       const response = await apiService.sendChatMessage(videoId, currentMessage);
+      
+      console.log('📝 Chat response received:', {
+        messageId: response.message_id,
+        hasResponse: !!response.response,
+        citationsCount: response.citations?.length || 0,
+        citations: response.citations
+      });
 
       const aiResponse: Message = {
         id: response.message_id.toString(),
         content: response.response,
         sender: 'ai',
         timestamp: new Date(),
-        citations: response.citations
+        citations: response.citations || []
       };
 
       setMessages(prev => [...prev, aiResponse]);
+      
+      // Log successful citation extraction
+      if (response.citations && response.citations.length > 0) {
+        console.log('✅ Citations extracted:', response.citations.map(c => ({
+          text: c.text?.substring(0, 50) + '...',
+          time: c.time,
+          timestamp: c.timestamp
+        })));
+      } else {
+        console.log('⚠️ No citations found in response');
+      }
+      
     } catch (error) {
+      console.error('❌ Chat error:', error);
+      
+      // More detailed error handling
+      let errorMessage = "Failed to send message";
+      if (error instanceof Error) {
+        if (error.message.includes('404')) {
+          errorMessage = "Video not found. Please make sure the video is uploaded and processed.";
+        } else if (error.message.includes('500')) {
+          errorMessage = "Server error. The video may need more processing time.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
         title: "Chat Error",
-        description: error instanceof Error ? error.message : "Failed to send message",
+        description: errorMessage,
         variant: "destructive",
       });
 
       // Add error message
       const errorResponse: Message = {
         id: (Date.now() + 1).toString(),
-        content: "I'm sorry, I encountered an error while processing your message. Please try again.",
+        content: "I'm sorry, I encountered an error while processing your message. Please try again, or make sure the video has been properly uploaded and processed.",
         sender: 'ai',
         timestamp: new Date(),
       };
@@ -97,23 +132,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ videoId, videoUrl, onTime
     }
   };
 
-  const generateAIResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
-
-    if (lowerMessage.includes('about') || lowerMessage.includes('summary')) {
-      return "This video covers video analysis and AI-powered chat capabilities. The speaker discusses building applications that can process video content, extract meaningful information, and enable natural language interactions with video data. Key topics include RAG (Retrieval-Augmented Generation) for video content, timestamp-based navigation, and visual search capabilities.";
-    }
-
-    if (lowerMessage.includes('project') || lowerMessage.includes('features')) {
-      return "The project involves three main features: 1) Chat with videos using RAG to answer questions about content, 2) Section breakdown with timestamp hyperlinks for navigation, and 3) Visual search to find specific content within video frames using natural language queries.";
-    }
-
-    if (lowerMessage.includes('technology') || lowerMessage.includes('tech')) {
-      return "The technology stack likely includes video processing APIs, AI/ML models for content analysis, natural language processing for chat capabilities, and computer vision for visual search functionality. The speaker mentions working at companies like Microsoft and Google, bringing experience from Big Tech.";
-    }
-
-    return "Based on the video content, I can help you understand the concepts discussed. The speaker covers video analysis, AI integration, and practical applications for processing video content. Could you be more specific about what aspect you'd like to explore?";
-  };
 
 
 

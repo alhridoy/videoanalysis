@@ -42,6 +42,10 @@ export interface SearchResult {
   confidence: number;
   description: string;
   frame_path: string;
+  summary?: string;
+  objects_detected?: string[];
+  people_count?: number;
+  detailed_analysis?: string;
 }
 
 export interface ClipResult {
@@ -53,11 +57,22 @@ export interface ClipResult {
   frames: SearchResult[];
 }
 
+export interface VideoClip {
+  start_time: number;
+  end_time: number;
+  confidence: number;
+  description: string;
+  frame_count: number;
+}
+
 export interface VisualSearchResponse {
   query: string;
   results: SearchResult[];
   clips: ClipResult[];
   total_results: number;
+  direct_answer?: string;
+  query_type?: string;
+  processing_method?: string;
 }
 
 class ApiService {
@@ -157,8 +172,9 @@ class ApiService {
   }
 
   // Search endpoints
-  async visualSearch(videoId: number, query: string, maxResults: number = 10): Promise<VisualSearchResponse> {
-    return this.request('/search/visual', {
+  async visualSearch(videoId: number, query: string, maxResults: number = 10, useNative: boolean = true): Promise<VisualSearchResponse> {
+    const searchUrl = useNative ? '/search/visual?use_native=true' : '/search/visual?use_native=false';
+    return this.request(searchUrl, {
       method: 'POST',
       body: JSON.stringify({
         video_id: videoId,
@@ -166,6 +182,28 @@ class ApiService {
         max_results: maxResults,
       }),
     });
+  }
+
+  async getNativeVisualSearch(videoId: number, query: string, maxResults: number = 10): Promise<VisualSearchResponse> {
+    return this.request('/search/native', {
+      method: 'POST',
+      body: JSON.stringify({
+        video_id: videoId,
+        query,
+        max_results: maxResults,
+      }),
+    });
+  }
+
+  async getVideoFrame(videoId: number, timestamp: number): Promise<Blob> {
+    const response = await fetch(`${API_BASE_URL}/video/${videoId}/frame/${timestamp}`);
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Frame fetch failed' }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    
+    return response.blob();
   }
 
   async getVideoFrames(videoId: number, limit: number = 50): Promise<{
