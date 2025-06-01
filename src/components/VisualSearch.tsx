@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Eye, Clock, Zap, Film, ChevronDown, ChevronUp, Users, Target, TrendingUp, MapPin, Timer, Layers } from 'lucide-react';
-import { apiService, SearchResult, ClipResult } from '@/services/api';
+import React, { useState } from 'react';
+import { Search, Eye, Clock, Zap, Film, ChevronDown, ChevronUp, Users, Target } from 'lucide-react';
+import { SearchResult, ClipResult } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
-import { TemporalCounter } from './TemporalCounter';
-import { MomentRetrieval } from './MomentRetrieval';
-import { VideoTimeline } from './VideoTimeline';
 
 interface VisualSearchProps {
   videoId: number;
@@ -12,7 +9,7 @@ interface VisualSearchProps {
   onTimeJump: (time: number) => void;
 }
 
-const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, videoUrl, onTimeJump }) => {
+const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -23,53 +20,9 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, videoUrl, onTimeJu
   const [queryType, setQueryType] = useState<string>('');
   const [expandedResults, setExpandedResults] = useState<Set<number>>(new Set());
 
-  // Enhanced features state
-  const [showTemporalCounter, setShowTemporalCounter] = useState(false);
-  const [showMomentRetrieval, setShowMomentRetrieval] = useState(false);
-  const [temporalData, setTemporalData] = useState<any[]>([]);
-  const [moments, setMoments] = useState<any[]>([]);
-  const [thumbnails, setThumbnails] = useState<any[]>([]);
-  const [clipMarkers, setClipMarkers] = useState<any[]>([]);
-  const [processingMethod, setProcessingMethod] = useState<string>('');
-
   const { toast } = useToast();
 
-  // Load enhanced features on component mount
-  useEffect(() => {
-    loadEnhancedFeatures();
-  }, [videoId]);
 
-  const loadEnhancedFeatures = async () => {
-    try {
-      // Load thumbnails for timeline
-      const thumbnailResponse = await fetch(`/api/v1/search/${videoId}/thumbnails`);
-      if (thumbnailResponse.ok) {
-        const thumbnailData = await thumbnailResponse.json();
-        setThumbnails(thumbnailData.thumbnails || []);
-      }
-
-      // Load moments for moment retrieval
-      const momentsResponse = await fetch(`/api/v1/search/${videoId}/moment-retrieval`);
-      if (momentsResponse.ok) {
-        const momentsData = await momentsResponse.json();
-        setMoments(momentsData.moments || []);
-      }
-    } catch (error) {
-      console.warn('Failed to load enhanced features:', error);
-    }
-  };
-
-  const loadTemporalData = async (query: string) => {
-    try {
-      const response = await fetch(`/api/v1/search/${videoId}/temporal-counting?query=${encodeURIComponent(query)}`);
-      if (response.ok) {
-        const data = await response.json();
-        setTemporalData(data.temporal_data || []);
-      }
-    } catch (error) {
-      console.warn('Failed to load temporal data:', error);
-    }
-  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -721,46 +674,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, videoUrl, onTimeJu
         </div>
       )}
 
-      {/* Search Tips */}
-      {!hasSearched && (
-        <div className="mt-6 p-4 bg-gray-900/80 rounded-lg border border-gray-700">
-          <h4 className="text-sm font-medium text-white mb-3">Enhanced Search Tips</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h5 className="text-xs font-medium text-gray-300 mb-2 uppercase tracking-wide">Counting Queries</h5>
-              <ul className="space-y-1 text-sm text-gray-400">
-                <li>• "How many people are here?"</li>
-                <li>• "Count the objects in this frame"</li>
-                <li>• "Number of speakers visible"</li>
-              </ul>
-            </div>
-            <div>
-              <h5 className="text-xs font-medium text-gray-300 mb-2 uppercase tracking-wide">Object Detection</h5>
-              <ul className="space-y-1 text-sm text-gray-400">
-                <li>• "microphone", "laptop", "coffee cup"</li>
-                <li>• "What is the person wearing?"</li>
-                <li>• "Show me the equipment visible"</li>
-              </ul>
-            </div>
-            <div>
-              <h5 className="text-xs font-medium text-gray-300 mb-2 uppercase tracking-wide">Scene Analysis</h5>
-              <ul className="space-y-1 text-sm text-gray-400">
-                <li>• "background color", "studio setup"</li>
-                <li>• "indoor scene", "professional setting"</li>
-                <li>• "lighting conditions"</li>
-              </ul>
-            </div>
-            <div>
-              <h5 className="text-xs font-medium text-gray-300 mb-2 uppercase tracking-wide">General Queries</h5>
-              <ul className="space-y-1 text-sm text-gray-400">
-                <li>• "person speaking", "presenter"</li>
-                <li>• "text on screen", "code examples"</li>
-                <li>• "demonstration", "explanation"</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };

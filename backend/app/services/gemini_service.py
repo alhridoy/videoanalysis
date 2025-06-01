@@ -121,7 +121,7 @@ class GeminiService:
             Estimated Duration: {estimated_duration:.0f} seconds
 
             Transcript:
-            {transcript[:50000]}  # Increased limit for longer videos
+            {transcript}
 
             TASK: Create 8-15 detailed sections that represent different topics, themes, or phases of the video.
 
@@ -418,9 +418,9 @@ class GeminiService:
             
             prompt = f"""
             Analyze this video transcript and identify key moments that would be interesting to highlight.
-            
+
             Transcript:
-            {transcript[:20000]}  # Increased limit for better analysis
+            {transcript}
             
             Identify 5-10 key moments that represent:
             - Topic changes

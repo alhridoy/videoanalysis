@@ -40,6 +40,10 @@ export interface SearchResult {
   confidence: number;
   description: string;
   frame_path: string;
+  summary?: string;
+  objects_detected?: string[];
+  people_count?: number;
+  detailed_analysis?: string;
 }
 
 export interface ClipResult {
@@ -166,7 +170,7 @@ class ApiService {
     });
   }
 
-  async getVideoFrames(videoId: number, limit: number = 500): Promise<{
+  async getVideoFrames(videoId: number, limit: number = 50): Promise<{
     video_id: number;
     frames: Array<{
       id: number;
