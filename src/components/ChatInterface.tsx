@@ -1,15 +1,23 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Clock } from 'lucide-react';
+import { Send, Bot, User } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
+import FormattedMessage from './FormattedMessage';
+
+interface Citation {
+  text: string;
+  time: number;
+  timestamp: string;
+  citation_id: number;
+}
 
 interface Message {
   id: string;
   content: string;
   sender: 'user' | 'ai';
   timestamp: Date;
-  citations?: { text: string; time: number }[];
+  citations?: Citation[];
 }
 
 interface ChatInterfaceProps {
@@ -107,11 +115,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ videoId, videoUrl, onTime
     return "Based on the video content, I can help you understand the concepts discussed. The speaker covers video analysis, AI integration, and practical applications for processing video content. Could you be more specific about what aspect you'd like to explore?";
   };
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+
 
   return (
     <div className="flex flex-col h-full">
@@ -142,31 +146,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ videoId, videoUrl, onTime
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-muted text-foreground'
               }`}>
-                <p className="text-sm leading-relaxed">{message.content}</p>
-
-                {/* Citations */}
-                {message.citations && (
-                  <div className="mt-3 pt-3 border-t border-border">
-                    <p className="text-xs text-muted-foreground mb-2">References:</p>
-                    <div className="space-y-1">
-                      {message.citations.map((citation, index) => (
-                        <button
-                          key={index}
-                          onClick={() => onTimeJump(citation.time)}
-                          className="flex items-center gap-2 text-xs bg-accent hover:bg-accent/80 rounded px-2 py-1 transition-colors"
-                        >
-                          <Clock className="w-3 h-3" />
-                          <span>{citation.text}</span>
-                          <span className="text-muted-foreground">
-                            [{formatTime(citation.time)}]
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                {message.sender === 'ai' && message.citations ? (
+                  <FormattedMessage
+                    content={message.content}
+                    citations={message.citations}
+                    onTimeJump={onTimeJump}
+                  />
+                ) : (
+                  <p className="text-sm leading-relaxed">{message.content}</p>
                 )}
 
-                <p className="text-xs text-muted-foreground mt-2">
+                <p className="text-xs text-muted-foreground mt-3">
                   {message.timestamp.toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit'

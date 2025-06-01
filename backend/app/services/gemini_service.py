@@ -69,7 +69,7 @@ class GeminiService:
             truncated_transcript = transcript[:max_transcript_length] if len(transcript) > max_transcript_length else transcript
 
             prompt = f"""
-            You are an AI assistant that helps users understand video content.
+            You are an AI assistant that helps users understand video content. Provide well-structured, professional responses.
 
             Video Information:
             Title: {video_info.get('title', 'Unknown')}
@@ -80,9 +80,30 @@ class GeminiService:
 
             Current question: {question}
 
-            Please provide a helpful response based on the video content. If you reference specific parts of the video, include timestamps in your response. Format timestamps as [MM:SS] or [HH:MM:SS].
+            RESPONSE FORMATTING REQUIREMENTS:
+            1. Structure your response with clear sections using **bold headers** when appropriate
+            2. Use bullet points (•) for lists and key points - ALWAYS use the bullet symbol •, not asterisks
+            3. Write in a conversational but professional tone
+            4. When referencing specific parts of the video, include timestamps as [MM:SS] or [HH:MM:SS] based on content flow
+            5. Organize information logically with proper paragraph breaks
+            6. Highlight important concepts or terms with **bold text**
+            7. Use numbered lists for step-by-step explanations
+            8. Include relevant timestamps even if estimating based on content progression
 
-            Also identify any specific timestamps that support your answer and return them separately.
+            EXAMPLE FORMATTING:
+            **Overview of Topic:**
+            The video discusses several key concepts:
+
+            • **First concept**: Brief explanation with supporting details [02:15]
+            • **Second concept**: Another important point [12:34]
+            • **Third concept**: Additional information [18:45]
+
+            **Key Differences:**
+            1. First difference explained clearly [05:42]
+            2. Second difference with timestamp reference [08:20]
+            3. Third difference with context [15:30]
+
+            Provide a comprehensive, well-formatted response based on the video content.
             """
 
             response = self.model.generate_content(prompt)
@@ -712,25 +733,61 @@ class GeminiService:
             return f"I'm currently processing the video '{title}' to better understand its content. Please try your question again in a moment, and I'll be able to provide more specific information."
 
     def _extract_timestamps(self, text: str, transcript: str) -> List[Dict]:
-        """Extract timestamp citations from AI response"""
+        """Extract timestamp citations from AI response and create inline citations"""
         import re
-        
+
         # Find timestamp patterns in the response
         timestamp_pattern = r'\[(\d{1,2}:\d{2}(?::\d{2})?)\]'
         matches = re.findall(timestamp_pattern, text)
-        
+
         citations = []
-        for match in matches:
+        seen_timestamps = set()  # Avoid duplicate citations
+
+        for i, match in enumerate(matches):
+            if match in seen_timestamps:
+                continue
+            seen_timestamps.add(match)
+
             # Convert timestamp to seconds
             time_parts = match.split(':')
             if len(time_parts) == 2:  # MM:SS
                 seconds = int(time_parts[0]) * 60 + int(time_parts[1])
             else:  # HH:MM:SS
                 seconds = int(time_parts[0]) * 3600 + int(time_parts[1]) * 60 + int(time_parts[2])
-            
+
+            # Try to extract context around the timestamp from the transcript
+            context = self._extract_context_for_timestamp(transcript, seconds)
+
             citations.append({
-                "text": f"Reference at {match}",
-                "time": seconds
+                "text": context if context else f"Reference at {match}",
+                "time": seconds,
+                "timestamp": match,
+                "citation_id": i + 1
             })
-        
+
         return citations
+
+    def _extract_context_for_timestamp(self, transcript: str, target_seconds: int) -> str:
+        """Extract relevant context from transcript around a specific timestamp"""
+        try:
+            # This is a simplified approach - in a real implementation,
+            # you'd have timestamp-aligned transcript data
+            words = transcript.split()
+
+            # Rough estimation: ~2 words per second
+            target_word_index = target_seconds * 2
+
+            # Extract context around the target (±10 words)
+            start_index = max(0, target_word_index - 10)
+            end_index = min(len(words), target_word_index + 10)
+
+            context_words = words[start_index:end_index]
+            context = " ".join(context_words)
+
+            # Truncate if too long
+            if len(context) > 100:
+                context = context[:97] + "..."
+
+            return context
+        except:
+            return ""

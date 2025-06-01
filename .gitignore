@@ -48,6 +48,13 @@ backend/uploads/*.avi
 backend/uploads/*.mov
 backend/uploads/*.mkv
 backend/uploads/*.webm
+backend/uploads/frames/*
+backend/uploads/thumbnails/*
+backend/uploads/youtube/*
+*.jpg
+*.jpeg
+*.png
+*.gif
 
 # Logs
 logs/

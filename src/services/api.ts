@@ -33,6 +33,8 @@ export interface ChatMessage {
 export interface Citation {
   text: string;
   time: number;
+  timestamp: string;
+  citation_id: number;
 }
 
 export interface SearchResult {
@@ -40,10 +42,6 @@ export interface SearchResult {
   confidence: number;
   description: string;
   frame_path: string;
-  summary?: string;
-  objects_detected?: string[];
-  people_count?: number;
-  detailed_analysis?: string;
 }
 
 export interface ClipResult {
