@@ -132,8 +132,16 @@ class GeminiService:
     async def generate_video_sections(self, transcript: str, video_info: Dict) -> List[Dict]:
         """Generate intelligent video sections using AI"""
         try:
-            # Estimate video duration from transcript length (rough approximation)
+            # Use actual video duration if available, otherwise estimate from transcript
+            actual_duration = video_info.get('duration', 0) if video_info else 0
             estimated_duration = len(transcript.split()) * 0.5  # ~0.5 seconds per word
+
+            # Use the more reliable duration source
+            if actual_duration > 0:
+                estimated_duration = actual_duration
+                logger.info(f"Using actual video duration: {actual_duration} seconds")
+            else:
+                logger.info(f"Using estimated duration from transcript: {estimated_duration} seconds")
 
             prompt = f"""
             You are an expert video content analyzer. Analyze this video transcript and create a comprehensive breakdown into logical sections.
@@ -151,7 +159,9 @@ class GeminiService:
             2. Sections should have natural topic boundaries
             3. Provide specific timestamps based on content flow
             4. Include rich descriptions and multiple key topics
-            5. Ensure sections cover the entire video duration
+            5. CRITICAL: Ensure sections cover the ENTIRE video duration ({estimated_duration:.0f} seconds)
+            6. The final section MUST end at or near {estimated_duration:.0f} seconds
+            7. Do not create sections that only cover the first few minutes
 
             For each section, provide:
             - title: Descriptive and engaging title (5-8 words)
@@ -195,8 +205,11 @@ class GeminiService:
 
         except Exception as e:
             logger.error(f"Error generating video sections: {e}")
-            # Return fallback sections on error
-            return self._generate_fallback_sections(transcript if 'transcript' in locals() else "", 300)
+            # Return fallback sections on error - use actual video duration if available
+            actual_duration = video_info.get('duration', 300) if video_info else 300
+            estimated_duration = len(transcript.split()) * 0.5 if transcript else actual_duration
+            final_duration = max(actual_duration, estimated_duration) if actual_duration else estimated_duration
+            return self._generate_fallback_sections(transcript if 'transcript' in locals() else "", final_duration)
     
     async def analyze_frame(self, frame_path: str, context: str = "", timestamp: float = 0.0) -> Dict:
         """Analyze a video frame using Gemini Vision with advanced temporal understanding"""
@@ -710,11 +723,15 @@ class GeminiService:
 
         except Exception as e:
             logger.error(f"Error generating fallback sections: {e}")
-            # Ultimate fallback - single section
+            # Ultimate fallback - single section with proper duration
+            fallback_duration = max(estimated_duration, 300) if estimated_duration > 0 else 300
+            end_min, end_sec = divmod(int(fallback_duration), 60)
+            end_time = f"{end_min}:{end_sec:02d}" if end_min < 60 else f"{end_min//60}:{end_min%60:02d}:{end_sec:02d}"
+
             return [{
                 "title": "Video Content",
                 "start_time": "0:00",
-                "end_time": "5:00",
+                "end_time": end_time,
                 "description": "Video content analysis in progress. Please try again shortly for detailed sections.",
                 "key_topics": ["content", "analysis", "processing"]
             }]
