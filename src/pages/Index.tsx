@@ -21,12 +21,10 @@ const Index = () => {
     setVideoId(id);
     setUploadedVideo(videoUrl);
     setVideoTitle(title);
-    console.log('Video uploaded:', id, videoUrl, title);
   };
 
   const handleTimeJump = (time: number) => {
     setCurrentTime(time);
-    console.log('Jumping to time:', time);
   };
 
   // Fetch video duration when videoId changes
@@ -37,7 +35,6 @@ const Index = () => {
           const videoInfo = await apiService.getVideo(videoId);
           setVideoDuration(videoInfo.duration || null);
         } catch (error) {
-          console.error('Error fetching video duration:', error);
         }
       }
     };

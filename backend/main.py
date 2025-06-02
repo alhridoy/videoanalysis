@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import os
 from dotenv import load_dotenv
 import logging
@@ -28,6 +29,12 @@ async def lifespan(app: FastAPI):
     
     # Create database tables
     Base.metadata.create_all(bind=engine)
+    
+    # Create thumbnail directory if it doesn't exist
+    os.makedirs("thumbnails", exist_ok=True)
+    
+    # Create frames directory if it doesn't exist
+    os.makedirs("uploads/frames", exist_ok=True)
     
     # Initialize services
     video_processor = VideoProcessor()
@@ -57,7 +64,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=["*"],  # Configure with specific origins for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,6 +74,10 @@ app.add_middleware(
 app.include_router(video.router, prefix="/api/v1/video", tags=["video"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
+
+# Mount static files for thumbnails and frames
+app.mount("/api/thumbnails", StaticFiles(directory="thumbnails"), name="thumbnails")
+app.mount("/api/frames", StaticFiles(directory="uploads/frames"), name="frames")
 
 @app.get("/")
 async def root():
@@ -95,6 +106,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
         log_level="info"
     )

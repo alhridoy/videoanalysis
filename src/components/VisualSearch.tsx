@@ -87,27 +87,10 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
     setExpandedResults(new Set()); // Reset expanded results
 
     try {
-      // Log the search attempt for debugging
-      console.log(`🔍 Starting visual search for: "${searchQuery}" on video ID: ${videoId}`);
       
       // Use real API call to search video content with the native search enabled
       const response = await apiService.visualSearch(videoId, searchQuery.trim(), 10);
       
-      console.log('📊 Visual search response:', response);
-      
-      // Add detailed debugging for "people" searches
-      if (searchQuery.toLowerCase().includes('people') || searchQuery.toLowerCase().includes('person')) {
-        console.log('👥 People search debug:', {
-          query: searchQuery,
-          videoId,
-          processingMethod: response.processing_method,
-          totalResults: response.total_results,
-          hasClips: !!response.clips && response.clips.length > 0,
-          hasResults: !!response.results && response.results.length > 0,
-          clipsData: response.clips?.slice(0, 2), // First 2 clips for inspection
-          resultsData: response.results?.slice(0, 2) // First 2 results for inspection
-        });
-      }
 
       setSearchResults(response.results || []);
       setSearchClips(response.clips || []);
@@ -135,13 +118,6 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
           title: "No results found", 
           description: processingMessage,
         });
-        
-        console.log('❌ No results found. Response details:', {
-          totalResults: response.total_results,
-          processingMethod: response.processing_method,
-          clips: response.clips?.length || 0,
-          results: response.results?.length || 0
-        });
       } else {
         const totalResults = (response.clips || []).length + (response.results || []).length;
         const method = response.processing_method ? ` using ${response.processing_method}` : '';
@@ -150,19 +126,8 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
           title: "Search completed",
           description: `Found ${totalResults} ${totalResults === 1 ? 'result' : 'results'} for "${searchQuery}"${method}`,
         });
-        
-        console.log('✅ Search successful:', {
-          query: searchQuery,
-          totalResults,
-          processingMethod: response.processing_method,
-          clipsFound: response.clips?.length || 0,
-          framesFound: response.results?.length || 0,
-          directAnswer: response.direct_answer,
-          queryType: response.query_type
-        });
       }
     } catch (error) {
-      console.error('❌ Visual search error:', error);
       
       // More detailed error handling
       let errorMessage = "Failed to search video content";
@@ -231,9 +196,9 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
     <div className="space-y-4">
       {/* Header */}
       <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold text-foreground mb-2">Visual Search</h3>
-        <p className="text-sm text-muted-foreground">
-          Search for objects, people, or scenes within video frames
+        <h3 className="text-xl font-bold text-foreground mb-2">🔍 Visual Search</h3>
+        <p className="text-muted-foreground">
+          Find anything in your video using AI-powered visual analysis
         </p>
       </div>
 
@@ -244,8 +209,8 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search for anything... (e.g., 'red car', 'tree', 'people', 'microphone')"
-            className="w-full px-4 py-3 pl-12 pr-12 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all"
+            placeholder="Search for anything... (e.g., 'person', 'red car', 'microphone')"
+            className="w-full px-4 py-4 pl-12 pr-12 bg-input border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all text-lg shadow-sm"
             disabled={isSearching}
           />
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -269,57 +234,36 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
           )}
         </div>
 
-        {/* Search Suggestions & Help */}
+        {/* Search Suggestions */}
         {!hasSearched && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {['red car', 'person', 'microphone', 'text on screen', 'background', 'people'].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => setSearchQuery(suggestion)}
-                  className="px-3 py-1.5 text-xs bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground rounded-full transition-all border border-border hover:border-primary/50"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-            
-            <div className="bg-muted/30 rounded-lg p-3 text-xs text-muted-foreground">
-              <div className="font-medium mb-2">💡 How Visual Search Works:</div>
-              <div className="space-y-2">
-                <div>• <strong>Native Video Search:</strong> Uses Gemini 2.5 to directly analyze video content</div>
-                <div>• <strong>Object Detection:</strong> "car", "microphone", "phone", "person"</div>
-                <div>• <strong>Color + Object:</strong> "red car", "blue shirt", "green background"</div>
-                <div>• <strong>Scene Analysis:</strong> "background", "outdoor scene", "indoor setting"</div>
-                <div>• <strong>Text Detection:</strong> "sign", "text on screen", "writing"</div>
-                <div>• <strong>Counting:</strong> "how many people", "count cars"</div>
-              </div>
-              
-              <div className="mt-3 pt-2 border-t border-border text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span>Powered by Gemini 2.5 Video Understanding</span>
-                </div>
-              </div>
-            </div>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {['person', 'red car', 'microphone', 'text on screen', 'background', 'people'].map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => setSearchQuery(suggestion)}
+                className="px-4 py-2 text-sm bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground rounded-full transition-all border border-border hover:border-primary shadow-sm hover:shadow-md"
+              >
+                {suggestion}
+              </button>
+            ))}
           </div>
         )}
 
         <button
           type="submit"
           disabled={!searchQuery.trim() || isSearching}
-          className="w-full bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-primary-foreground font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+          className="w-full bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-primary-foreground font-semibold py-4 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-xl flex items-center justify-center gap-3 text-lg"
         >
           {isSearching ? (
             <>
-              <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary-foreground border-t-transparent"></div>
-              Analyzing Frames...
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-foreground border-t-transparent"></div>
+              Analyzing Video...
             </>
           ) : (
             <>
-              <Eye className="w-5 h-5" />
-              Search Video
+              <Eye className="w-6 h-6" />
+              Search with AI
             </>
           )}
         </button>
@@ -472,15 +416,28 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                         {/* Clip Thumbnail */}
                         <div className="relative aspect-video bg-muted/50 rounded-t-lg overflow-hidden">
                           {/* Thumbnail Image */}
-                          <img 
-                            src={`https://picsum.photos/400/225?random=${index + Math.random()}`}
-                            alt={`Clip ${index + 1} thumbnail`}
-                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                            onError={(e) => {
-                              const target = e.currentTarget;
-                              target.style.display = 'none';
-                            }}
-                          />
+                          {clip.thumbnail_url ? (
+                            <img 
+                              src={`http://localhost:8001${clip.thumbnail_url}`}
+                              alt={`Clip ${index + 1} thumbnail`}
+                              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                target.style.display = 'none';
+                                // Show fallback thumbnail icon
+                                const fallback = target.nextElementSibling as HTMLElement;
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
+                            />
+                          ) : null}
+                          
+                          {/* Fallback thumbnail when no real thumbnail is available */}
+                          <div
+                            className="absolute inset-0 flex items-center justify-center bg-muted/80"
+                            style={{ display: clip.thumbnail_url ? 'none' : 'flex' }}
+                          >
+                            <Film className="w-12 h-12 text-muted-foreground" />
+                          </div>
                           
                           {/* Play button overlay */}
                           <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -557,10 +514,12 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
               {viewMode === 'timeline' && searchClips.length > 0 && (
                 <div className="space-y-4">
                   <div className="bg-muted/30 rounded-lg p-4">
-                    <h5 className="text-sm font-medium text-foreground mb-3">Clip Timeline</h5>
+                    <h5 className="text-sm font-medium text-foreground mb-3">
+                      Clip Timeline ({searchClips.length} clips found)
+                    </h5>
                     <div className="relative">
                       {/* Timeline bar */}
-                      <div className="h-2 bg-muted rounded-full relative overflow-hidden">
+                      <div className="h-8 bg-muted rounded-lg relative overflow-hidden border border-border">
                         {searchClips.map((clip, index) => {
                           const totalDuration = Math.max(...searchClips.map(c => c.end_time));
                           const startPercent = (clip.start_time / totalDuration) * 100;
@@ -569,21 +528,24 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                           return (
                             <div
                               key={index}
-                              className={`absolute h-full rounded transition-all cursor-pointer ${
+                              className={`absolute h-full rounded transition-all cursor-pointer flex items-center justify-center ${
                                 index === currentClipIndex
-                                  ? 'bg-primary'
-                                  : 'bg-primary/60 hover:bg-primary/80'
+                                  ? 'bg-primary shadow-lg z-10'
+                                  : 'bg-primary/60 hover:bg-primary/80 hover:z-10'
                               }`}
                               style={{
                                 left: `${startPercent}%`,
-                                width: `${widthPercent}%`
+                                width: `${Math.max(2, widthPercent)}%`,  // Ensure minimum width for visibility
+                                minWidth: '20px'  // Minimum width to ensure clickability
                               }}
                               onClick={() => {
                                 setCurrentClipIndex(index);
                                 onTimeJump(clip.start_time);
                               }}
                               title={`Clip ${index + 1}: ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}`}
-                            />
+                            >
+                              <span className="text-xs font-medium text-primary-foreground">{index + 1}</span>
+                            </div>
                           );
                         })}
                       </div>
@@ -591,7 +553,28 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                       {/* Timeline markers */}
                       <div className="flex justify-between mt-2 text-xs text-muted-foreground">
                         <span>0:00</span>
+                        <span className="text-center">{formatTime(Math.max(...searchClips.map(c => c.end_time)) / 2)}</span>
                         <span>{formatTime(Math.max(...searchClips.map(c => c.end_time)))}</span>
+                      </div>
+                      
+                      {/* Clip indicators below timeline */}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {searchClips.map((clip, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setCurrentClipIndex(index);
+                              onTimeJump(clip.start_time);
+                            }}
+                            className={`px-2 py-1 rounded text-xs font-medium transition-all ${
+                              index === currentClipIndex
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                            }`}
+                          >
+                            Clip {index + 1} ({formatTime(clip.start_time)})
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -663,7 +646,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                           <div className="w-20 h-12 bg-muted rounded flex items-center justify-center relative overflow-hidden">
                             {result.frame_path ? (
                               <img
-                                src={result.frame_path}
+                                src={`http://localhost:8001${result.frame_path}`}
                                 alt={`Frame at ${formatTime(result.timestamp)}`}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
@@ -792,79 +775,9 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
             <div className="text-center py-12">
               <div className="max-w-md mx-auto">
                 <Search className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium text-foreground mb-2">
+                <h3 className="text-lg font-medium text-foreground">
                   No matches found for "{searchQuery}"
                 </h3>
-                <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-                  Try different keywords or be more specific about visual elements. Search works best with objects, people, colors, or scenes.
-                </p>
-                
-                {/* Quick suggestions for failed searches */}
-                <div className="space-y-4">
-                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                    <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">🔧 Troubleshooting</h4>
-                    <div className="text-sm text-amber-700 dark:text-amber-300 space-y-2">
-                      <div>• <strong>For uploaded videos:</strong> Make sure the video file exists and is properly processed</div>
-                      <div>• <strong>For YouTube videos:</strong> Visual search works best with recently uploaded content</div>
-                      <div>• <strong>Search tips:</strong> Try broader terms like "person" instead of specific names</div>
-                      <div>• <strong>Best results:</strong> Clear, prominent objects work better than small details</div>
-                    </div>
-                    
-                    <div className="mt-3 pt-3 border-t border-amber-200 dark:border-amber-700 space-y-2">
-                      <button
-                        onClick={async () => {
-                          try {
-                            setIsSearching(true);
-                            await apiService.analyzeVideoFrames(videoId);
-                            toast({
-                              title: "Frame Analysis Started",
-                              description: "Video frames are being analyzed. This may take a few minutes. Try your search again shortly.",
-                            });
-                          } catch (error) {
-                            toast({
-                              title: "Analysis Failed",
-                              description: "Could not start frame analysis. Please try again.",
-                              variant: "destructive",
-                            });
-                          } finally {
-                            setIsSearching(false);
-                          }
-                        }}
-                        disabled={isSearching}
-                        className="w-full text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded font-medium transition-colors disabled:opacity-50"
-                      >
-                        {isSearching ? 'Processing...' : 'Analyze Video Frames'}
-                      </button>
-                      
-                      <button
-                        onClick={() => {
-                          setSearchQuery('person');
-                          handleSearch({ preventDefault: () => {} } as React.FormEvent);
-                        }}
-                        disabled={isSearching}
-                        className="w-full text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded font-medium transition-colors disabled:opacity-50"
-                      >
-                        🧪 Test Search "person"
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <p className="text-xs text-muted-foreground font-medium mb-2">Try these proven searches:</p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                      {['person', 'people', 'microphone', 'background', 'speaker', 'text', 'screen', 'chair'].map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          type="button"
-                          onClick={() => setSearchQuery(suggestion)}
-                          className="px-3 py-1.5 text-xs bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground rounded-full transition-all border border-border hover:border-primary"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
           )}

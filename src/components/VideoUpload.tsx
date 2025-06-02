@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, AlertCircle, Youtube } from 'lucide-react';
+import { Play, Video } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiService } from '@/services/api';
 
@@ -77,7 +77,7 @@ const VideoUpload: React.FC<VideoUploadProps> = ({ onVideoUpload }) => {
       {/* YouTube URL Input */}
       <div className="bg-card border border-border rounded-2xl p-8">
         <div className="flex items-center gap-3 mb-6 justify-center">
-          <Youtube className="w-10 h-10 text-red-600" />
+          <Video className="w-10 h-10 text-red-600" />
           <h3 className="text-2xl font-bold text-foreground">
             Add YouTube Video
           </h3>
@@ -112,21 +112,6 @@ const VideoUpload: React.FC<VideoUploadProps> = ({ onVideoUpload }) => {
           </button>
         </form>
 
-        <div className="mt-6 p-4 bg-muted rounded-lg">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p className="font-medium">What happens next:</p>
-              <ul className="space-y-1 ml-4">
-                <li>• Extract video transcript automatically</li>
-                <li>• Analyze video content with AI</li>
-                <li>• Enable chat with video content</li>
-                <li>• Create searchable video sections</li>
-                <li>• Enable visual search within video frames</li>
-              </ul>
-            </div>
-          </div>
-        </div>
 
         {/* Example URLs */}
         <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">

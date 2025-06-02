@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = 'http://localhost:8001/api/v1';
 
 export interface VideoInfo {
   id: number;
@@ -55,6 +55,7 @@ export interface ClipResult {
   description: string;
   frame_count: number;
   frames: SearchResult[];
+  thumbnail_url?: string;
 }
 
 export interface VideoClip {
@@ -232,7 +233,7 @@ class ApiService {
   // Health check
   async healthCheck(): Promise<{ status: string; services: Record<string, string> }> {
     // Health endpoint is at root level, not under /api/v1
-    const url = 'http://localhost:8000/health';
+    const url = 'http://localhost:8001/health';
 
     const response = await fetch(url, {
       headers: {

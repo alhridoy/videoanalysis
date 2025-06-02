@@ -65,16 +65,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ videoId, videoUrl, onTime
     setIsTyping(true);
 
     try {
-      console.log(`🤖 Sending chat message for video ${videoId}: "${currentMessage}"`);
       
       const response = await apiService.sendChatMessage(videoId, currentMessage);
-      
-      console.log('📝 Chat response received:', {
-        messageId: response.message_id,
-        hasResponse: !!response.response,
-        citationsCount: response.citations?.length || 0,
-        citations: response.citations
-      });
 
       const aiResponse: Message = {
         id: response.message_id.toString(),
@@ -86,19 +78,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ videoId, videoUrl, onTime
 
       setMessages(prev => [...prev, aiResponse]);
       
-      // Log successful citation extraction
-      if (response.citations && response.citations.length > 0) {
-        console.log('✅ Citations extracted:', response.citations.map(c => ({
-          text: c.text?.substring(0, 50) + '...',
-          time: c.time,
-          timestamp: c.timestamp
-        })));
-      } else {
-        console.log('⚠️ No citations found in response');
-      }
-      
     } catch (error) {
-      console.error('❌ Chat error:', error);
       
       // More detailed error handling
       let errorMessage = "Failed to send message";

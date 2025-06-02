@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Play, Pause, Volume2, Maximize, RotateCcw } from 'lucide-react';
+import { Play, Volume2, Maximize, RotateCcw } from 'lucide-react';
 
 // Declare YouTube API types
 declare global {
@@ -75,11 +75,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, title, currentTime 
                 controls: 1,
               },
               events: {
-                onReady: (event: any) => {
-                  console.log('YouTube player ready');
+                onReady: () => {
+                  // YouTube player ready
                 },
-                onError: (event: any) => {
-                  console.error('YouTube player error:', event.data);
+                onError: () => {
+                  // YouTube player error
                 },
               },
             });
@@ -95,7 +95,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, title, currentTime 
       if (isYouTubeUrl(videoUrl) && youtubePlayerRef.current) {
         // Check if YouTube player is ready and has seekTo method
         if (typeof youtubePlayerRef.current.seekTo === 'function') {
-          console.log('Seeking YouTube video to:', currentTime);
           try {
             youtubePlayerRef.current.seekTo(currentTime, true);
             // Also play the video after seeking
@@ -103,13 +102,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, title, currentTime 
               youtubePlayerRef.current.playVideo();
             }
           } catch (error) {
-            console.error('Error seeking YouTube video:', error);
           }
         } else {
           // If player not ready, retry after a short delay
           setTimeout(() => {
             if (youtubePlayerRef.current && typeof youtubePlayerRef.current.seekTo === 'function') {
-              console.log('Retrying YouTube seek to:', currentTime);
               youtubePlayerRef.current.seekTo(currentTime, true);
               if (typeof youtubePlayerRef.current.playVideo === 'function') {
                 youtubePlayerRef.current.playVideo();
@@ -118,9 +115,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, title, currentTime 
           }, 1000);
         }
       } else if (videoRef.current) {
-        console.log('Seeking regular video to:', currentTime);
         videoRef.current.currentTime = currentTime;
-        videoRef.current.play().catch(console.error);
+        videoRef.current.play().catch(() => {});
       }
     }
   }, [currentTime, videoUrl]);
@@ -139,9 +135,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, title, currentTime 
       {/* Video Header */}
       <div className="px-6 py-4 border-b border-white/10">
         <h2 className="text-xl font-semibold text-white truncate">{title}</h2>
-        <p className="text-purple-200 text-sm mt-1">
-          Ready for AI analysis and chat
-        </p>
       </div>
 
       {/* Video Container */}
@@ -185,20 +178,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, title, currentTime 
         </div>
       </div>
 
-      {/* Video Info */}
-      <div className="px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-            <span className="text-sm text-green-400 font-medium">
-              AI Analysis Active
-            </span>
-          </div>
-          <div className="text-sm text-purple-200">
-            Ready for chat and search
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

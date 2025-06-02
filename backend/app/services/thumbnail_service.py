@@ -225,7 +225,6 @@ class ThumbnailService:
             self.thumbnail_cache[cache_key] = str(thumbnail_path)
             self._save_cache()
             
-            logger.debug(f"Generated thumbnail: {thumbnail_path}")
             return str(thumbnail_path)
             
         except Exception as e:

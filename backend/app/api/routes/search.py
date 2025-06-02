@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.video import Video, VideoFrame
 from app.services.gemini_service import GeminiService
 from app.services.vector_service import VectorService
+from app.services.thumbnail_service import ThumbnailService
 logger = logging.getLogger(__name__)
 
 # Enhanced services (require additional dependencies)
@@ -18,7 +19,6 @@ try:
     from app.services.batch_video_service import BatchVideoService
     from app.services.dual_embedding_service import DualEmbeddingService
     from app.services.scene_detector import SceneDetector
-    from app.services.thumbnail_service import ThumbnailService
     from app.services.enhanced_video_analysis import EnhancedVideoAnalysis
     from app.services.native_video_search import (
         NativeVideoSearchService,
@@ -59,6 +59,7 @@ class ClipResult(BaseModel):
     description: str
     frame_count: int
     frames: List[SearchResult]
+    thumbnail_url: Optional[str] = None
 
 class VisualSearchResponse(BaseModel):
     query: str
@@ -97,7 +98,7 @@ def calculate_confidence_from_distance(distance: float, distance_metric: str = "
     
     return min(100.0, max(0.0, confidence))
 
-def group_frames_into_clips(results: List[SearchResult], threshold_seconds: float = 5.0) -> List[ClipResult]:
+def group_frames_into_clips(results: List[SearchResult], threshold_seconds: float = 5.0, video_path: str = None) -> List[ClipResult]:
     """
     Group consecutive frames into clips based on temporal proximity
     
@@ -127,17 +128,17 @@ def group_frames_into_clips(results: List[SearchResult], threshold_seconds: floa
         else:
             # Create clip from accumulated frames
             if current_clip_frames:
-                clips.append(_create_clip_from_frames(current_clip_frames))
+                clips.append(_create_clip_from_frames(current_clip_frames, video_path))
             current_clip_frames = [current_frame]
     
     # Don't forget the last clip
     if current_clip_frames:
-        clips.append(_create_clip_from_frames(current_clip_frames))
+        clips.append(_create_clip_from_frames(current_clip_frames, video_path))
     
     return clips
 
-def _create_clip_from_frames(frames: List[SearchResult]) -> ClipResult:
-    """Create a clip from a group of frames"""
+def _create_clip_from_frames(frames: List[SearchResult], video_path: str = None) -> ClipResult:
+    """Create a clip from a group of frames with thumbnail generation"""
     start_time = frames[0].timestamp
     end_time = frames[-1].timestamp
     
@@ -148,13 +149,39 @@ def _create_clip_from_frames(frames: List[SearchResult]) -> ClipResult:
     # Use the description from the highest confidence frame
     best_frame = max(frames, key=lambda f: f.confidence)
     
+    # Generate thumbnail for this clip
+    thumbnail_url = None
+    if video_path and os.path.exists(video_path):
+        try:
+            logger.info(f"🖼️ Generating thumbnail for clip {start_time}s-{end_time}s from video: {video_path}")
+            thumbnail_service = ThumbnailService()
+            # Use the middle timestamp of the clip for thumbnail
+            thumbnail_timestamp = (start_time + end_time) / 2
+            thumbnail_path = thumbnail_service.generate_thumbnail(
+                video_path, 
+                thumbnail_timestamp, 
+                'medium',  # Use medium size for clips
+                add_timestamp=True
+            )
+            if thumbnail_path and os.path.exists(thumbnail_path):
+                from pathlib import Path
+                thumbnail_url = f"/api/thumbnails/{Path(thumbnail_path).name}"
+                logger.info(f"✅ Thumbnail generated successfully: {thumbnail_url}")
+            else:
+                logger.warning(f"❌ Thumbnail generation returned empty path or file doesn't exist")
+        except Exception as e:
+            logger.error(f"❌ Failed to generate thumbnail for clip at {start_time}s: {e}", exc_info=True)
+    else:
+        logger.warning(f"❌ Video path invalid or doesn't exist: {video_path}")
+    
     return ClipResult(
         start_time=start_time,
         end_time=end_time,
         confidence=round(avg_confidence, 1),
         description=f"Clip from {start_time:.1f}s to {end_time:.1f}s: {best_frame.description}",
         frame_count=len(frames),
-        frames=frames
+        frames=frames,
+        thumbnail_url=thumbnail_url
     )
 
 @router.post("/visual", response_model=VisualSearchResponse)
@@ -335,7 +362,7 @@ async def visual_search(
                             ))
 
                         # Group results into clips
-                        clips = group_frames_into_clips(results)
+                        clips = group_frames_into_clips(results, video_path=video.file_path)
                         clips.sort(key=lambda c: c.confidence, reverse=True)
 
                         # Cleanup uploaded video
@@ -411,7 +438,7 @@ async def visual_search(
                     direct_answer = f"Scene analysis found {len(results)} relevant moments"
 
                 # Group results into clips
-                clips = group_frames_into_clips(results)
+                clips = group_frames_into_clips(results, video_path=video.file_path)
                 clips.sort(key=lambda c: c.confidence, reverse=True)
 
                 return VisualSearchResponse(
@@ -460,11 +487,11 @@ async def visual_search(
                 .all()
 
             logger.info(f"🔍 Found {len(frames)} frames in database for video {search_request.video_id}")
-            results = await _enhanced_semantic_search(search_request.query, frames)
+            results = await _enhanced_semantic_search(search_request.query, frames, video.file_path)
             logger.info(f"🔍 Semantic search returned {len(results)} results for query '{search_request.query}'")
 
         # Group results into clips
-        clips = group_frames_into_clips(results)
+        clips = group_frames_into_clips(results, video_path=video.file_path)
         clips.sort(key=lambda c: c.confidence, reverse=True)
 
         # Provide clear feedback when no results are found
@@ -488,6 +515,26 @@ async def visual_search(
     except Exception as e:
         logger.error(f"Error in enhanced visual search: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+def _convert_frame_path_to_url(frame_path: str) -> str:
+    """Convert local frame path to servable URL"""
+    if not frame_path:
+        return ""
+    
+    # Convert uploads/frames/filename.jpg to /api/frames/filename.jpg
+    if frame_path.startswith("uploads/frames/"):
+        filename = frame_path.replace("uploads/frames/", "")
+        return f"/api/frames/{filename}"
+    elif frame_path.startswith("/uploads/frames/"):
+        filename = frame_path.replace("/uploads/frames/", "")
+        return f"/api/frames/{filename}"
+    elif not frame_path.startswith("/api/"):
+        # If it's just a filename, assume it's in frames directory
+        from pathlib import Path
+        filename = Path(frame_path).name
+        return f"/api/frames/{filename}"
+    
+    return frame_path
 
 def _validate_semantic_match(query: str, description: str, exact_matches: int, semantic_matches: int) -> bool:
     """Validate that a semantic match is genuine and not a false positive"""
@@ -523,7 +570,7 @@ def _validate_semantic_match(query: str, description: str, exact_matches: int, s
 
     return False
 
-async def _enhanced_semantic_search(query: str, frames: List[VideoFrame]) -> List[SearchResult]:
+async def _enhanced_semantic_search(query: str, frames: List[VideoFrame], video_path: str = None) -> List[SearchResult]:
     """Enhanced semantic visual search using detailed frame descriptions with strict validation"""
     results = []
     query_lower = query.lower()
@@ -641,11 +688,32 @@ async def _enhanced_semantic_search(query: str, frames: List[VideoFrame]) -> Lis
             logger.debug(f"   Exact matches: {exact_matches if 'exact_matches' in locals() else 0}, Semantic matches: {semantic_matches if 'semantic_matches' in locals() else 0}")
             logger.debug(f"   Description: {description[:100]}...")
 
+            # Generate frame thumbnail if frame_path is empty or invalid
+            frame_url = _convert_frame_path_to_url(frame.frame_path) if frame.frame_path else ""
+            logger.debug(f"🖼️ Frame {frame.timestamp}s: original_path='{frame.frame_path}', converted_url='{frame_url}'")
+            
+            # If no frame exists, try to generate a thumbnail on-demand
+            if not frame_url and video_path and os.path.exists(video_path):
+                try:
+                    thumbnail_service = ThumbnailService()
+                    thumbnail_path = thumbnail_service.generate_thumbnail(
+                        video_path,
+                        frame.timestamp,
+                        'small',
+                        add_timestamp=True
+                    )
+                    if thumbnail_path:
+                        from pathlib import Path
+                        frame_url = f"/api/thumbnails/{Path(thumbnail_path).name}"
+                        logger.info(f"🖼️ Generated on-demand thumbnail for frame at {frame.timestamp}s")
+                except Exception as e:
+                    logger.warning(f"Failed to generate on-demand thumbnail: {e}")
+
             results.append(SearchResult(
                 timestamp=frame.timestamp,
                 confidence=round(confidence, 1),
                 description=description,
-                frame_path=frame.frame_path
+                frame_path=frame_url
             ))
         elif confidence > 0:
             logger.debug(f"❌ Rejected match at {frame.timestamp:.1f}s with low confidence {confidence:.1f}% for query '{query}'")
@@ -660,11 +728,6 @@ async def _enhanced_semantic_search(query: str, frames: List[VideoFrame]) -> Lis
 
     return results
 
-def _pattern_based_detection(query_lower: str, timestamp: float, original_query: str) -> tuple[float, str]:
-    """Fallback pattern-based detection for frames without descriptions - DISABLED to prevent false positives"""
-    # IMPORTANT: This function has been disabled to prevent false positives
-    # Only return matches if we have actual frame descriptions to analyze
-    return 0.0, ""
 
 async def _direct_visual_search(video_path: str, query: str, max_results: int = 10) -> Optional[VisualSearchResponse]:
     """
