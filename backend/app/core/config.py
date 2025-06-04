@@ -12,9 +12,6 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./videochat.db")
 
-    # Redis
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
-
     # Application
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     CORS_ORIGINS: List[str] = [
@@ -40,7 +37,7 @@ class Settings(BaseSettings):
     # Vector Database
     CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
 
-    # Redis Cache (Optional)
+    # Redis Cache
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     CACHE_TTL: int = int(os.getenv("CACHE_TTL", "3600"))  # 1 hour default
 
@@ -56,5 +53,6 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # Ignore extra fields in .env file
 
 settings = Settings()

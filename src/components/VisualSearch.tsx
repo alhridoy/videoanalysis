@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Eye, Clock, Zap, Film, ChevronDown, ChevronUp, Users, Target, Play, ChevronLeft, ChevronRight, Grid3X3, BarChart3 } from 'lucide-react';
-import { SearchResult, ClipResult, apiService } from '@/services/api';
+import { SearchResult, ClipResult, SearchSuggestionsResponse, apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface VisualSearchProps {
@@ -21,8 +21,51 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
   const [expandedResults, setExpandedResults] = useState<Set<number>>(new Set());
   const [currentClipIndex, setCurrentClipIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState<string>('');
 
   const { toast } = useToast();
+
+  // Load dynamic suggestions when video changes
+  useEffect(() => {
+    const loadSuggestions = async () => {
+      if (!videoId) return;
+      
+      setSuggestionsLoading(true);
+      setSuggestionsError('');
+      
+      try {
+        const suggestionsResponse = await apiService.getSearchSuggestions(videoId);
+        setSuggestions(suggestionsResponse.suggestions || []);
+        
+        // Show toast about suggestion generation method
+        if (suggestionsResponse.generation_method === 'hybrid') {
+          toast({
+            title: "Smart suggestions generated",
+            description: `Found ${suggestionsResponse.total_suggestions} contextual search terms from video content and transcript.`,
+          });
+        } else if (suggestionsResponse.generation_method === 'ai_analysis') {
+          toast({
+            title: "AI-powered suggestions",
+            description: `Generated ${suggestionsResponse.total_suggestions} visual search terms using AI analysis.`,
+          });
+        }
+        
+      } catch (error) {
+        console.error('Failed to load suggestions:', error);
+        setSuggestionsError('Failed to generate suggestions');
+        
+        // Fallback to basic suggestions
+        setSuggestions(['person', 'speaker', 'microphone', 'background', 'text on screen', 'camera']);
+        
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    };
+
+    loadSuggestions();
+  }, [videoId, toast]);
 
   // Add keyboard navigation
   useEffect(() => {
@@ -234,19 +277,76 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
           )}
         </div>
 
-        {/* Search Suggestions */}
+        {/* Dynamic Search Suggestions */}
         {!hasSearched && (
-          <div className="flex flex-wrap gap-2 justify-center">
-            {['person', 'red car', 'microphone', 'text on screen', 'background', 'people'].map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => setSearchQuery(suggestion)}
-                className="px-4 py-2 text-sm bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground rounded-full transition-all border border-border hover:border-primary shadow-sm hover:shadow-md"
-              >
-                {suggestion}
-              </button>
-            ))}
+          <div className="space-y-3">
+            {suggestionsLoading ? (
+              <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-muted-foreground border-t-transparent"></div>
+                <span className="text-sm">Analyzing video for smart suggestions...</span>
+              </div>
+            ) : suggestionsError ? (
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground mb-2">Using default suggestions</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setSearchQuery(suggestion)}
+                      className="px-4 py-2 text-sm bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground rounded-full transition-all border border-border hover:border-primary shadow-sm hover:shadow-md"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : suggestions.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">✨ Smart suggestions based on your video content:</p>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {suggestions.slice(0, 12).map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setSearchQuery(suggestion)}
+                      className="px-4 py-2 text-sm bg-gradient-to-r from-primary/10 to-primary/5 hover:from-primary hover:to-primary/90 hover:text-primary-foreground text-foreground rounded-full transition-all border border-primary/20 hover:border-primary shadow-sm hover:shadow-md font-medium"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+                {suggestions.length > 12 && (
+                  <div className="text-center">
+                    <button
+                      onClick={() => {
+                        // You could implement a "show more" feature here
+                        const remainingSuggestions = suggestions.slice(12);
+                        setSuggestions([...suggestions.slice(0, 12), ...remainingSuggestions]);
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      +{suggestions.length - 12} more suggestions available
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2 justify-center">
+                {['person', 'speaker', 'microphone', 'background', 'text on screen', 'camera'].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => setSearchQuery(suggestion)}
+                    className="px-4 py-2 text-sm bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground rounded-full transition-all border border-border hover:border-primary shadow-sm hover:shadow-md"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

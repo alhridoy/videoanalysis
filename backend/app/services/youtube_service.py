@@ -2,6 +2,7 @@ import re
 import logging
 import os
 import subprocess
+import asyncio
 from typing import Optional, Dict, List
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
@@ -43,7 +44,18 @@ class YouTubeService:
                 f'https://www.youtube.com/watch?v={video_id}'
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Use async subprocess to avoid blocking
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            result = type('Result', (), {
+                'returncode': process.returncode,
+                'stdout': stdout.decode(),
+                'stderr': stderr.decode()
+            })()
             
             if result.returncode == 0:
                 import json
@@ -85,7 +97,7 @@ class YouTubeService:
             output_path = os.path.join(self.download_dir, f'video_{video_db_id}.mp4')
             
             # Check if yt-dlp is available
-            if not self._check_ytdlp_available():
+            if not await self._check_ytdlp_available():
                 logger.error("yt-dlp is not installed. Please install it with: pip install yt-dlp")
                 return None
             
@@ -101,7 +113,18 @@ class YouTubeService:
             ]
             
             logger.info(f"Downloading YouTube video {video_id}...")
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Use async subprocess to avoid blocking
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            result = type('Result', (), {
+                'returncode': process.returncode,
+                'stdout': stdout.decode(),
+                'stderr': stderr.decode()
+            })()
             
             if result.returncode == 0 and os.path.exists(output_path):
                 logger.info(f"Successfully downloaded video to {output_path}")
@@ -114,11 +137,16 @@ class YouTubeService:
             logger.error(f"Error downloading YouTube video {video_id}: {e}")
             return None
     
-    def _check_ytdlp_available(self) -> bool:
+    async def _check_ytdlp_available(self) -> bool:
         """Check if yt-dlp is available"""
         try:
-            result = subprocess.run(['yt-dlp', '--version'], capture_output=True)
-            return result.returncode == 0
+            process = await asyncio.create_subprocess_exec(
+                'yt-dlp', '--version',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+            return process.returncode == 0
         except:
             return False
     

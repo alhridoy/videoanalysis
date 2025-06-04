@@ -1,10 +1,3 @@
-"""
-Simple Search Routes
-
-This replaces the overengineered search.py with a clean, effective implementation
-that focuses on delivering results, not complex architectures.
-"""
-
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -74,71 +67,41 @@ async def get_search_suggestions(
     video_id: int,
     db: Session = Depends(get_db)
 ):
-    """Generate smart search suggestions from video content and transcript"""
+    """Generate simple, effective search suggestions based on video content"""
     try:
         video = db.query(Video).filter(Video.id == video_id).first()
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
 
+        # Simple suggestion logic based on video type and title
         suggestions = []
-        generation_method = "content_based"
-
-        # METHOD 1: Extract from transcript if available
-        if video.transcript:
-            try:
-                gemini_service = request.app.state.gemini_service
-                prompt = f"""
-                Analyze this video transcript and generate 8 specific visual search terms that would help someone find interesting moments in the video.
-
-                Focus on:
-                - Objects, people, and visual elements mentioned
-                - Actions and activities described
-                - Settings and environments
-                - Specific items that would be visually identifiable
-
-                Transcript: {video.transcript[:2000]}...
-
-                Return only a comma-separated list of 8 search terms, no explanations.
-                Example: person speaking, microphone, computer screen, whiteboard, coffee cup, office chair, presentation slide, hand gesture
-                """
-
-                response = gemini_service.model.generate_content(prompt)
-                response = response.text if response else ""
-                if response and response.strip():
-                    # Parse the response
-                    suggested_terms = [term.strip() for term in response.split(',')]
-                    suggestions = [term for term in suggested_terms if term and len(term) > 2][:8]
-                    generation_method = "ai_transcript_analysis"
-
-            except Exception as e:
-                logger.warning(f"AI suggestion generation failed: {e}")
-
-        # METHOD 2: Fallback to title-based suggestions
-        if not suggestions:
+        
+        if video.video_type == "youtube":
             title_lower = video.title.lower()
-
+            
             # Context-aware suggestions based on video title
-            if any(word in title_lower for word in ['interview', 'talk', 'discussion', 'conversation']):
-                suggestions = ["person speaking", "microphone", "interviewer", "guest", "office background", "desk", "chair", "gestures"]
-            elif any(word in title_lower for word in ['demo', 'tutorial', 'how to', 'guide']):
-                suggestions = ["screen", "computer", "demonstration", "presenter", "keyboard", "mouse", "software", "interface"]
-            elif any(word in title_lower for word in ['review', 'unbox', 'product']):
-                suggestions = ["product", "hands", "table", "packaging", "close-up", "box", "item", "comparison"]
-            elif any(word in title_lower for word in ['ai', 'technology', 'software', 'coding']):
-                suggestions = ["computer", "screen", "code", "interface", "person", "presentation", "diagram", "text"]
-            elif any(word in title_lower for word in ['business', 'keynote', 'conference']):
-                suggestions = ["presenter", "stage", "audience", "screen", "microphone", "podium", "slides", "logo"]
+            if any(word in title_lower for word in ['interview', 'talk', 'discussion']):
+                suggestions = ["person speaking", "microphone", "interviewer", "guest", "office background"]
+            elif any(word in title_lower for word in ['demo', 'tutorial', 'how to']):
+                suggestions = ["screen", "computer", "demonstration", "presenter", "tutorial"]
+            elif any(word in title_lower for word in ['review', 'unbox']):
+                suggestions = ["product", "hands", "table", "packaging", "close-up"]
+            elif any(word in title_lower for word in ['car', 'drive', 'vehicle']):
+                suggestions = ["red car", "vehicle", "driving", "road", "dashboard"]
+            elif any(word in title_lower for word in ['music', 'song', 'performance']):
+                suggestions = ["performer", "stage", "microphone", "audience", "instrument"]
             else:
-                # Smart general suggestions
-                suggestions = ["person", "speaker", "screen", "text", "background", "object", "hands", "face"]
-
-            generation_method = "enhanced_title_based"
-
+                # General video suggestions
+                suggestions = ["person", "speaker", "background", "text on screen", "object"]
+        else:
+            # Default suggestions for uploaded videos
+            suggestions = ["person", "object", "text on screen", "background", "vehicle"]
+        
         return {
             "video_id": video_id,
             "suggestions": suggestions[:8],  # Limit to 8 suggestions
             "total_suggestions": len(suggestions),
-            "generation_method": generation_method
+            "generation_method": "simple_title_based"
         }
         
     except HTTPException:

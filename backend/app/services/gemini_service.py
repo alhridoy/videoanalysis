@@ -1,4 +1,3 @@
-import google.generativeai as genai
 import logging
 from typing import List, Dict, Optional
 from app.core.config import settings
@@ -10,14 +9,30 @@ import time
 logger = logging.getLogger(__name__)
 
 class GeminiService:
-    """Service for interacting with Google's Gemini AI"""
+    """Service for interacting with Google's Gemini AI (with lazy initialization)"""
     
     def __init__(self):
         if not settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is required")
         
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        # Lazy initialization - only import and configure when needed
+        self._model = None
+        self._initialized = False
+        
+    def _ensure_initialized(self):
+        """Initialize Gemini only when first needed to speed up startup"""
+        if not self._initialized:
+            import google.generativeai as genai
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            self._model = genai.GenerativeModel(settings.GEMINI_MODEL)
+            self._initialized = True
+            logger.info("✅ Gemini service initialized")
+    
+    @property
+    def model(self):
+        """Get the model, initializing if necessary"""
+        self._ensure_initialized()
+        return self._model
         
     async def analyze_video_content(self, transcript: str, video_info: Dict) -> Dict:
         """Analyze video content and generate insights"""
@@ -296,6 +311,10 @@ class GeminiService:
                     "error": "Video file not found"
                 }
 
+            # Ensure Gemini is initialized
+            self._ensure_initialized()
+            import google.generativeai as genai
+
             # Upload video file to Gemini
             logger.info(f"Uploading video to Gemini: {video_path}")
             video_file = genai.upload_file(path=video_path)
@@ -370,6 +389,10 @@ class GeminiService:
             if not os.path.exists(video_path):
                 logger.error(f"Video file not found: {video_path}")
                 return []
+
+            # Ensure Gemini is initialized
+            self._ensure_initialized()
+            import google.generativeai as genai
 
             # Upload video file to Gemini
             logger.info(f"Uploading video for search: {video_path}")
@@ -817,7 +840,11 @@ class GeminiService:
         try:
             if not os.path.exists(frame_path):
                 return {"match": False, "confidence": 0.0, "description": "Frame not found"}
-            
+
+            # Ensure Gemini is initialized
+            self._ensure_initialized()
+            import google.generativeai as genai
+
             # Upload image to Gemini
             image_file = genai.upload_file(path=frame_path)
             

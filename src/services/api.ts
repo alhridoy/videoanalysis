@@ -76,6 +76,21 @@ export interface VisualSearchResponse {
   processing_method?: string;
 }
 
+export interface SearchSuggestionsResponse {
+  video_id: number;
+  suggestions: string[];
+  categories: {
+    objects: string[];
+    people: string[];
+    scenes: string[];
+    text: string[];
+    actions: string[];
+    colors: string[];
+  };
+  total_suggestions: number;
+  generation_method: string;
+}
+
 class ApiService {
   private async request<T>(
     endpoint: string,
@@ -228,6 +243,10 @@ class ApiService {
     return this.request(`/search/${videoId}/analyze-frames`, {
       method: 'POST',
     });
+  }
+
+  async getSearchSuggestions(videoId: number): Promise<SearchSuggestionsResponse> {
+    return this.request(`/search/${videoId}/suggestions`);
   }
 
   // Health check

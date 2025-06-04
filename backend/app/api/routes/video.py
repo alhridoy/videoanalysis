@@ -14,7 +14,7 @@ try:
     ENHANCED_PROCESSING_AVAILABLE = True
 except ImportError:
     ENHANCED_PROCESSING_AVAILABLE = False
-from .search import analyze_video_frames  # Import for automatic frame analysis
+# Frame analysis functionality removed for stability
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -178,31 +178,31 @@ async def process_youtube_video_background(
                     # Commit frames to database
                     db.commit()
                     
-                    # Trigger automatic frame analysis
-                    processing_status[video_id]["message"] = "Analyzing frames..."
-                    processing_status[video_id]["progress"] = 80
+                    # All frame analysis disabled for fast response
+                    processing_status[video_id]["message"] = "Processing complete"
+                    processing_status[video_id]["progress"] = 100
+
+                    logger.info(f"Frame analysis disabled for video {video.id} - processing complete")
                     
-                    logger.info(f"Starting automatic frame analysis for video {video.id}...")
-                    analyze_response = await analyze_video_frames(request, video.id, db)
-                    logger.info(f"Frame analysis result: {analyze_response}")
-                    
-                    # Index transcript for vector search
+                    # Generate sections if we have transcript
                     if video.transcript:
-                        processing_status[video_id]["message"] = "Indexing for search..."
+                        processing_status[video_id]["message"] = "Generating video sections..."
                         processing_status[video_id]["progress"] = 90
-                        
-                        from app.services.vector_service import VectorService
-                        vector_service = VectorService()
-                        if vector_service.available:
-                            await vector_service.add_transcript_embedding(
-                                video_id=str(video.id),
-                                transcript=video.transcript,
-                                metadata={
-                                    "video_id": video.id,
-                                    "title": video.title,
-                                    "video_type": "youtube"
-                                }
+
+                        try:
+                            video_info = await youtube_service.get_video_info(youtube_id)
+                            sections = await gemini_service.generate_video_sections(
+                                video.transcript,
+                                video_info
                             )
+                            video.sections = sections
+                            logger.info(f"Generated {len(sections)} sections for video {video.id}")
+                        except Exception as e:
+                            logger.error(f"Error generating sections: {e}")
+                            video.sections = []
+
+                    # Mark video as completed
+                    video.status = "completed"
                 else:
                     video.status = "failed"
                     logger.error(f"Failed to process video frames: {result}")

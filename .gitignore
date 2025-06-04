@@ -39,7 +39,11 @@ venv.bak/
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
 videochat.db
+chroma_db/
+thumbnails/
 
 # Logs
 *.log
@@ -143,3 +147,7 @@ test_*.py
 # Backup files
 *.bak
 *.backup
+
+# Markdown files (except README)
+*.md
+!README.md

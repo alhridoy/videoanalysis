@@ -12,7 +12,6 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.services.video_processor import VideoProcessor
 from app.services.gemini_service import GeminiService
-from app.services.vector_service import VectorService
 
 # Load environment variables
 load_dotenv()
@@ -39,12 +38,10 @@ async def lifespan(app: FastAPI):
     # Initialize services
     video_processor = VideoProcessor()
     gemini_service = GeminiService()
-    vector_service = VectorService()
 
     # Store services in app state
     app.state.video_processor = video_processor
     app.state.gemini_service = gemini_service
-    app.state.vector_service = vector_service
     
     logger.info("Backend startup complete!")
     
