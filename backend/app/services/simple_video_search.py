@@ -67,8 +67,33 @@ class SimpleVideoSearch:
         
         logger.info(f"🔍 Simple search for '{query}' in video {video_id}")
         
-        # METHOD 1: Native Gemini 2.5 Video Analysis (DISABLED - NOT WORKING)
-        if False and self.native_service and video_path and os.path.exists(video_path):
+        # METHOD 1: Native Gemini 2.5 Video Analysis (DISABLED - CAUSING DELAYS!)
+        if False and self.gemini_service and video_path and os.path.exists(video_path):
+            try:
+                # Use native video search directly through Gemini service
+                results = await self._native_gemini_search(video_path, query, video_id)
+                if results:
+                    processing_time = time.time() - start_time
+                    logger.info(f"✅ Native Gemini search found {len(results)} results in {processing_time:.2f}s")
+
+                    # Convert results to clips for timeline/clips view
+                    clips = self._results_to_clips(results)
+
+                    return VideoSearchResponse(
+                        query=query,
+                        results=results,
+                        clips=clips,
+                        total_results=len(results),
+                        processing_method="native_gemini_video",
+                        processing_time=processing_time,
+                        direct_answer=f"Found {len(results)} instances of '{query}' in the video",
+                        query_type="visual_search"
+                    )
+            except Exception as e:
+                logger.warning(f"Native Gemini search failed, falling back to frame analysis: {e}")
+
+        # METHOD 2: Direct Frame Analysis (FALLBACK)
+        if self.gemini_service and video_path and os.path.exists(video_path):
             try:
                 results = await self._native_search(video_path, query)
                 if results:
@@ -123,7 +148,43 @@ class SimpleVideoSearch:
             processing_method="no_results",
             processing_time=processing_time
         )
-    
+
+    async def _native_gemini_search(self, video_path: str, query: str, video_id: int = None) -> List[SearchResult]:
+        """
+        Use Gemini 2.5's native video understanding for FAST and ACCURATE search
+        This is the BEST method - processes entire video in one API call
+        """
+        try:
+            # Use Gemini's native video search capability
+            search_results = await self.gemini_service.search_video_content(video_path, query)
+
+            results = []
+            for result in search_results:
+                # Convert Gemini results to SearchResult format
+                timestamp = result.get('timestamp', 0.0)
+                confidence = result.get('confidence', 0.8) * 100
+                description = result.get('description', f"Found '{query}' at {timestamp:.1f}s")
+
+                # Create clip around the match
+                clip_start = max(0, timestamp - 5)
+                clip_end = timestamp + 10  # Longer clips for better context
+
+                results.append(SearchResult(
+                    timestamp=timestamp,
+                    confidence=confidence,
+                    description=description,
+                    frame_path=f"/api/v1/search/{video_id}/frame?timestamp={timestamp}",
+                    clip_start=clip_start,
+                    clip_end=clip_end
+                ))
+
+            logger.info(f"🚀 Native Gemini search processed entire video in one call")
+            return results
+
+        except Exception as e:
+            logger.error(f"Native Gemini search failed: {e}")
+            return []
+
     async def _native_search(self, video_path: str, query: str) -> List[SearchResult]:
         """Use native Gemini 2.5 video understanding - the best method"""
         if not self.native_service:

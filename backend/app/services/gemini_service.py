@@ -458,6 +458,56 @@ class GeminiService:
             logger.error(f"Error in video content search: {e}")
             return []
 
+    def _parse_search_results_from_text(self, text: str) -> List[Dict]:
+        """Parse search results from text when JSON parsing fails"""
+        try:
+            results = []
+            lines = text.strip().split('\n')
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Try to extract timestamp and description
+                if ':' in line and ('s' in line or 'second' in line):
+                    # Look for patterns like "0:30 - description" or "30s: description"
+                    parts = line.split(':', 1)
+                    if len(parts) == 2:
+                        try:
+                            # Extract timestamp
+                            time_part = parts[0].strip()
+                            desc_part = parts[1].strip()
+
+                            # Parse timestamp (handle formats like "0:30", "30s", "30")
+                            if 's' in time_part:
+                                timestamp = float(time_part.replace('s', ''))
+                            elif ':' in time_part:
+                                time_components = time_part.split(':')
+                                if len(time_components) == 2:
+                                    minutes = int(time_components[0])
+                                    seconds = int(time_components[1])
+                                    timestamp = minutes * 60 + seconds
+                                else:
+                                    timestamp = float(time_part)
+                            else:
+                                timestamp = float(time_part)
+
+                            results.append({
+                                'timestamp': timestamp,
+                                'description': desc_part,
+                                'confidence': 0.8
+                            })
+                        except (ValueError, IndexError):
+                            continue
+
+            logger.info(f"Parsed {len(results)} results from text response")
+            return results
+
+        except Exception as e:
+            logger.error(f"Error parsing text results: {e}")
+            return []
+
     async def analyze_video_moments(self, video_path: str, transcript: str) -> List[Dict]:
         """
         Analyze video to extract key moments using Gemini 2.5 capabilities
