@@ -163,80 +163,93 @@ class SimpleVideoSearch:
     
     async def _direct_frame_search(self, video_path: str, query: str, video_id: int = None) -> List[SearchResult]:
         """
-        Direct frame analysis - extract frames at reasonable density and analyze
-        Much simpler than the overengineered version
+        OPTIMIZED frame analysis - much faster with smart sampling and early termination
         """
         import cv2
         import tempfile
-        
+
         results = []
-        
+
         # Open video
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             return []
-        
+
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps if fps > 0 else 0
+
+        # OPTIMIZATION 1: Aggressive sampling for speed
+        if duration <= 300:  # 5 minutes or less
+            sample_interval = 20.0  # Every 20 seconds
+            max_frames_to_check = 4  # Max 4 frames (FASTER)
+        elif duration <= 900:  # 15 minutes or less
+            sample_interval = 30.0  # Every 30 seconds
+            max_frames_to_check = 6  # Max 6 frames (FASTER)
+        else:  # Longer videos
+            sample_interval = 45.0  # Every 45 seconds (FASTER)
+            max_frames_to_check = 8  # Max 8 frames (FASTER)
+
+        # OPTIMIZATION 2: Early termination settings
+        max_results = 5
         
-        # Sample sparsely to prevent blocking - every 30 seconds for fast response
-        sample_interval = 30.0  # seconds (much less dense but faster)
-        frame_interval = int(fps * sample_interval)
-        
-        frame_count = 0
-        
+        frames_checked = 0
+
         try:
-            while True:
+            # OPTIMIZATION 3: Process specific timestamps instead of scanning entire video
+            timestamps_to_check = []
+            for i in range(max_frames_to_check):
+                timestamp = i * sample_interval
+                if timestamp < duration:
+                    timestamps_to_check.append(timestamp)
+
+            logger.info(f"🚀 OPTIMIZED: Checking only {len(timestamps_to_check)} frames at {sample_interval}s intervals (duration: {duration:.1f}s)")
+
+            for timestamp in timestamps_to_check:
+                # OPTIMIZATION 4: Jump directly to timestamp (no sequential reading)
+                frame_number = int(timestamp * fps)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+
                 ret, frame = cap.read()
                 if not ret:
-                    break
-                
-                # Process frame at intervals
-                if frame_count % frame_interval == 0:
-                    timestamp = frame_count / fps
-                    
-                    # Save frame temporarily
-                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-                        cv2.imwrite(tmp.name, frame)
-                        
-                        # Analyze with Gemini using correct method
-                        try:
-                            # Use the existing analyze_frame_for_search method
-                            analysis = await self.gemini_service.analyze_frame_for_search(tmp.name, query)
+                    continue
 
-                            # Check if match found
-                            if analysis.get("match", False):
-                                confidence = analysis.get("confidence", 0.5) * 100
-                                description = analysis.get("description", f"Found '{query}' at {timestamp:.1f}s")
+                frames_checked += 1
 
-                                # Create clip around the match (±5 seconds)
-                                clip_start = max(0, timestamp - 5)
-                                clip_end = min(duration, timestamp + 5)
+                # OPTIMIZATION 5: Use temporary file but with better cleanup
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=True) as tmp:
+                    cv2.imwrite(tmp.name, frame)
 
-                                results.append(SearchResult(
-                                    timestamp=timestamp,
-                                    confidence=confidence,
-                                    description=description,
-                                    frame_path=f"/api/v1/search/{video_id}/frame?timestamp={timestamp}",
-                                    clip_start=clip_start,
-                                    clip_end=clip_end
-                                ))
-                        except Exception as e:
-                            logger.warning(f"Frame analysis failed at {timestamp:.1f}s: {e}")
-                        
-                        # Clean up
-                        try:
-                            os.unlink(tmp.name)
-                        except:
-                            pass
-                
-                frame_count += 1
+                    # Analyze with Gemini
+                    try:
+                        analysis = await self.gemini_service.analyze_frame_for_search(tmp.name, query)
 
-                # Hard limits to prevent blocking
-                if len(results) >= 5:  # Max 5 results
-                    break
-                if frame_count > total_frames // 10:  # Max 10% of frames
+                        # Check if match found
+                        if analysis.get("match", False):
+                            confidence = analysis.get("confidence", 0.5) * 100
+                            description = analysis.get("description", f"Found '{query}' at {timestamp:.1f}s")
+
+                            # Create clip around the match (±5 seconds)
+                            clip_start = max(0, timestamp - 5)
+                            clip_end = min(duration, timestamp + 5)
+
+                            results.append(SearchResult(
+                                timestamp=timestamp,
+                                confidence=confidence,
+                                description=description,
+                                frame_path=f"/api/v1/search/{video_id}/frame?timestamp={timestamp}",
+                                clip_start=clip_start,
+                                clip_end=clip_end
+                            ))
+
+                            logger.info(f"✅ Found match at {timestamp:.1f}s: {description[:50]}...")
+
+                    except Exception as e:
+                        logger.warning(f"Frame analysis failed at {timestamp:.1f}s: {e}")
+
+                # OPTIMIZATION 6: Early termination when we have enough results
+                if len(results) >= max_results:
+                    logger.info(f"🎯 Found {len(results)} results, stopping early")
                     break
                     
         finally:
