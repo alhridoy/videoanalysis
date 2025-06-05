@@ -101,7 +101,7 @@ const HealthCheck: React.FC = () => {
             <p className="text-xs text-red-200 mb-1">Backend Unavailable</p>
             <p className="text-xs text-red-300">{health.error}</p>
             <p className="text-xs text-red-400 mt-1">
-              Make sure the backend is running on port 8000
+              Make sure the backend is running on port 8002
             </p>
           </div>
         </div>

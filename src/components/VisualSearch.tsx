@@ -236,15 +236,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="text-center mb-6">
-        <h3 className="text-xl font-bold text-foreground mb-2">🔍 Visual Search</h3>
-        <p className="text-muted-foreground">
-          Find anything in your video using AI-powered visual analysis
-        </p>
-      </div>
-
+    <div className="space-y-6">
       {/* Search Form */}
       <form onSubmit={handleSearch} className="space-y-4">
         <div className="relative">
@@ -304,7 +296,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
             ) : suggestions.length > 0 ? (
               <div className="space-y-2">
                 <div className="text-center">
-                  <p className="text-sm text-muted-foreground">✨ Smart suggestions based on your video content:</p>
+                  <p className="text-sm text-muted-foreground">Smart suggestions based on your video content:</p>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-center">
                   {suggestions.slice(0, 12).map((suggestion) => (
@@ -499,7 +491,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
                   </div>
 
                   {/* Clips Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-500/50 scrollbar-track-transparent">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {searchClips.map((clip, index) => (
                       <div
                         key={index}
@@ -733,7 +725,7 @@ const VisualSearch: React.FC<VisualSearchProps> = ({ videoId, onTimeJump }) => {
 
               {/* Frames View */}
               {viewMode === 'frames' && (
-                <div className="max-h-96 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-gray-500/50 scrollbar-track-transparent">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {searchResults.map((result, index) => (
                     <div
                       key={index}

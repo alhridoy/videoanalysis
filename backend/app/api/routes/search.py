@@ -58,7 +58,7 @@ async def visual_search(
             video_id=search_request.video_id
         )
         
-        logger.info(f"🔍 Search '{search_request.query}' completed using {response.processing_method}")
+        logger.info(f"Search '{search_request.query}' completed using {response.processing_method}")
         
         return response
         

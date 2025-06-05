@@ -26,7 +26,7 @@ class GeminiService:
             genai.configure(api_key=settings.GEMINI_API_KEY)
             self._model = genai.GenerativeModel(settings.GEMINI_MODEL)
             self._initialized = True
-            logger.info("✅ Gemini service initialized")
+            logger.info("Gemini service initialized")
     
     @property
     def model(self):
@@ -898,28 +898,11 @@ class GeminiService:
             # Upload image to Gemini
             image_file = genai.upload_file(path=frame_path)
             
-            # Create focused search prompt
+            # ULTRA-FAST optimized prompt (reduced from 20+ lines to 4 lines)
             prompt = f"""
-            Analyze this image and determine if it contains: "{search_query}"
-            
-            TASK: Look for "{search_query}" in this image.
-            
-            SEARCH CRITERIA:
-            - Look for objects, people, colors, text, or scenes matching "{search_query}"
-            - Consider partial matches and semantic variations
-            - For "red car" - look for any car that is red or reddish
-            - For "person" - look for any human beings visible
-            - For "text" - look for any readable text or writing
-            
-            RESPONSE FORMAT (JSON only):
-            {{
-                "match": true/false,
-                "confidence": 0.0-1.0,
-                "description": "Brief description of what matches or why no match"
-            }}
-            
-            Be specific about what you see. If you find a match, describe it clearly.
-            RESPOND WITH ONLY THE JSON, NO OTHER TEXT.
+            Does this image contain "{search_query}"?
+
+            Respond in JSON: {{"match": true/false, "confidence": 0.0-1.0, "description": "brief explanation"}}
             """
             
             # Generate analysis

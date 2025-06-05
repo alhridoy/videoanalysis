@@ -1,8 +1,8 @@
-# 🎥 VidChat - Multimodal Video Analysis System
+# VidChat - Multimodal Video Analysis System
 
 A powerful multimodal video analysis system that enables intelligent chat with YouTube videos, generates timestamped sections, and provides advanced visual content search using Gemini's video understanding capabilities.
 
-## 🌟 Key Features
+## Key Features
 
 ### 1. **RAG-Based Video Chat**
 - Upload videos or provide YouTube links
@@ -28,20 +28,20 @@ A powerful multimodal video analysis system that enables intelligent chat with Y
 - Support for videos up to 6 hours with configurable resolution
 - Frame-by-frame content analysis and description
 
-## 🚀 Recent Improvements
+## Recent Improvements
 
-### ✅ Visual Search False Positive Fix
+### Visual Search False Positive Fix
 - **Problem**: Search for "car" returned false positives from partial word matches (e.g., "card")
 - **Solution**: Implemented regex word boundary detection for exact word matching
 - **Result**: 100% accurate search results with no false positives
 
-### 🎯 Enhanced Search Accuracy
+### Enhanced Search Accuracy
 - Word boundary detection prevents partial matches
 - Strict semantic validation with confidence thresholds
 - Disabled pattern-based fallbacks that generated fake results
 - Comprehensive logging for debugging and transparency
 
-## 🛠 Technology Stack
+## Technology Stack
 
 ### Backend
 - **FastAPI** - High-performance Python web framework
@@ -57,14 +57,14 @@ A powerful multimodal video analysis system that enables intelligent chat with Y
 - **Vite** - Fast development and build tool
 - **Lucide React** - Beautiful icons
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.8+
 - Node.js 16+
 - FFmpeg installed
 - Google Gemini API key
 
-## 🔧 Installation
+## Installation
 
 ### 1. Clone the Repository
 ```bash
@@ -93,7 +93,7 @@ cd ../  # Back to root directory
 npm install
 ```
 
-## 🚀 Running the Application
+## Running the Application
 
 ### Start Backend Server
 ```bash
@@ -111,7 +111,7 @@ The application will be available at:
 - Backend API: `http://localhost:8000`
 - API Documentation: `http://localhost:8000/docs`
 
-## 📖 Usage Guide
+## Usage Guide
 
 ### 1. **Upload or Add YouTube Video**
 - Click "Upload Video" to add a local video file
@@ -134,7 +134,7 @@ The application will be available at:
 - Click timestamps to navigate to specific moments
 - Explore key topics for each section
 
-## 🧪 Testing
+## Testing
 
 ### Run Visual Search Tests
 ```bash
@@ -142,11 +142,11 @@ python test_car_search_fix.py
 ```
 
 This test validates that the visual search system:
-- ✅ Returns 0 results for non-existent objects (no false positives)
-- ✅ Finds legitimate matches when content exists
-- ✅ Provides accurate confidence scores
+- Returns 0 results for non-existent objects (no false positives)
+- Finds legitimate matches when content exists
+- Provides accurate confidence scores
 
-## 🔍 API Endpoints
+## API Endpoints
 
 ### Video Management
 - `POST /api/v1/video/youtube` - Process YouTube video
@@ -161,7 +161,7 @@ This test validates that the visual search system:
 - `POST /api/v1/chat/{video_id}/message` - Send chat message
 - `GET /api/v1/chat/{video_id}/history` - Get chat history
 
-## 🎯 Performance Optimizations
+## Performance Optimizations
 
 - **Batch Video Processing**: Efficient handling of long videos
 - **Scene Change Detection**: Smart frame selection (~10% of total frames)
@@ -169,14 +169,14 @@ This test validates that the visual search system:
 - **Redis Caching**: Fast retrieval of processed content
 - **Real Vector Search**: ChromaDB for production-grade semantic search
 
-## 🔒 Security & Privacy
+## Security & Privacy
 
 - Secure API key management through environment variables
 - Local video processing (no data sent to external services except Gemini API)
 - Configurable data retention policies
 - CORS protection and input validation
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -184,11 +184,11 @@ This test validates that the visual search system:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Google Gemini team for advanced video understanding capabilities
 - LangChain community for multimodal AI insights
@@ -196,4 +196,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ for intelligent video analysis and interaction**
+**Built with care for intelligent video analysis and interaction**

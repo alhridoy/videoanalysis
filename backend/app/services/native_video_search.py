@@ -177,11 +177,11 @@ class NativeVideoSearchService:
                 clips = self._post_process_clips(clips)
                 logger.info(f"Post-processed to {len(clips)} final clips")
             
-            logger.info(f"✅ Search completed: Found {len(clips)} clips matching '{query}'")
+            logger.info(f"Search completed: Found {len(clips)} clips matching '{query}'")
             return clips
-            
+
         except Exception as e:
-            logger.error(f"❌ Error in visual content search for '{query}': {str(e)}", exc_info=True)
+            logger.error(f"Error in visual content search for '{query}': {str(e)}", exc_info=True)
             return []
     
     async def find_all_occurrences(self, video_path: str, visual_element: str) -> List[VideoClip]:

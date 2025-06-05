@@ -66,67 +66,88 @@ const Index = () => {
         {!uploadedVideo ? (
           <VideoUpload onVideoUpload={handleVideoUpload} />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Video Player Section */}
-            <div className="lg:col-span-2">
-              <VideoPlayer
-                videoUrl={uploadedVideo}
-                title={videoTitle}
-                currentTime={currentTime}
-              />
-            </div>
+          <div className="space-y-6">
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Video Player Section */}
+              <div className="lg:col-span-2">
+                <VideoPlayer
+                  videoUrl={uploadedVideo}
+                  title={videoTitle}
+                  currentTime={currentTime}
+                />
+              </div>
 
-            {/* Right Sidebar */}
-            <div className="lg:col-span-1">
-              <div className="bg-black border border-gray-700 rounded-xl p-6 h-full">
-                {/* Tab Navigation */}
-                <div className="flex rounded-lg bg-gray-900 p-1 mb-6">
-                  {tabs.map((tab) => {
-                    const Icon = tab.icon;
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-all duration-200 ${
-                          activeTab === tab.id
-                            ? 'bg-white text-black shadow-lg'
-                            : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span className="text-sm font-medium">{tab.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* Right Sidebar - Only Chat and Sections */}
+              <div className="lg:col-span-1">
+                <div className="bg-black border border-gray-700 rounded-xl p-6 h-full">
+                  {/* Tab Navigation - Only Chat and Sections */}
+                  <div className="flex rounded-lg bg-gray-900 p-1 mb-6">
+                    {tabs.filter(tab => tab.id !== 'search').map((tab) => {
+                      const Icon = tab.icon;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id as any)}
+                          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-all duration-200 ${
+                            activeTab === tab.id
+                              ? 'bg-white text-black shadow-lg'
+                              : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="text-sm font-medium">{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                {/* Tab Content */}
-                <div className="h-[600px] overflow-hidden">
-                  {activeTab === 'chat' && videoId && (
-                    <ChatInterface
-                      videoId={videoId}
-                      videoUrl={uploadedVideo}
-                      onTimeJump={handleTimeJump}
-                    />
-                  )}
-                  {activeTab === 'sections' && videoId && (
-                    <VideoSections
-                      videoId={videoId}
-                      videoUrl={uploadedVideo}
-                      videoDuration={videoDuration || undefined}
-                      onTimeJump={handleTimeJump}
-                    />
-                  )}
-                  {activeTab === 'search' && videoId && (
-                    <VisualSearch
-                      videoId={videoId}
-                      videoUrl={uploadedVideo}
-                      onTimeJump={handleTimeJump}
-                    />
-                  )}
+                  {/* Tab Content */}
+                  <div className="h-[600px] overflow-hidden">
+                    {activeTab === 'chat' && videoId && (
+                      <ChatInterface
+                        videoId={videoId}
+                        videoUrl={uploadedVideo}
+                        onTimeJump={handleTimeJump}
+                      />
+                    )}
+                    {activeTab === 'sections' && videoId && (
+                      <VideoSections
+                        videoId={videoId}
+                        videoUrl={uploadedVideo}
+                        videoDuration={videoDuration || undefined}
+                        onTimeJump={handleTimeJump}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
+
+            {/* Visual Search Section - Full Width Below Video */}
+            {videoId && (
+              <div className="w-full">
+                <div className="bg-black border border-gray-700 rounded-xl p-6">
+                  {/* Visual Search Header */}
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
+                      <Search className="w-5 h-5 text-primary-foreground" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-semibold text-white">Visual Search</h2>
+                      <p className="text-gray-400 text-sm">Find anything in your video using AI-powered visual analysis</p>
+                    </div>
+                  </div>
+
+                  {/* Visual Search Component */}
+                  <VisualSearch
+                    videoId={videoId}
+                    videoUrl={uploadedVideo}
+                    onTimeJump={handleTimeJump}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
